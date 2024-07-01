@@ -490,7 +490,7 @@ else:
 
                     submit_edit = st.form_submit_button('Edit Hewan')
                     if submit_edit:
-                        if gambar_edit is not None
+                        if gambar_edit is not None:
                             gambar_name_edit = save_uploaded_file(gambar_edit)
                         else:
                             gambar_name_edit = hewan.gambar
@@ -508,3 +508,4 @@ else:
             if submit_hapus:
                 peternakan.hapus_hewan(id_hapus)
                 st.success('Hewan berhasil dihapus!')
+
