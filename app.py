@@ -16,7 +16,7 @@ ensure_images_directory_exists()
 
 # Koneksi ke SQLite
 def create_connection():
-    conn = sqlite3.connect('peternakan.db')
+    conn = sqlite3.connect('peternakan1.db')
     return conn
 
 # Inisialisasi database dan tabel
