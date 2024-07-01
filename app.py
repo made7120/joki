@@ -28,7 +28,10 @@ def init_db():
     cursor.execute("PRAGMA table_info(hewan)")
     columns = [column[1] for column in cursor.fetchall()]
     if "gambar" not in columns:
-        cursor.execute("ALTER TABLE hewan ADD COLUMN gambar TEXT")
+        try:
+            cursor.execute("ALTER TABLE hewan ADD COLUMN gambar TEXT")
+        except sqlite3.OperationalError:
+            pass
     
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS hewan (
