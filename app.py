@@ -1,513 +1,314 @@
-import os
-from abc import ABC, abstractmethod
-import sqlite3
 import streamlit as st
-from streamlit_option_menu import option_menu
 import pandas as pd
-import hashlib
+from openpyxl import load_workbook
+import os
 
-# Fungsi untuk memastikan direktori 'images' ada
-def ensure_images_directory_exists():
-    if not os.path.exists("images"):
-        os.makedirs("images")
+# Pastikan folder untuk menyimpan foto sampul dan buku digital ada
+if not os.path.exists("sampul_buku"):
+    os.makedirs("sampul_buku")
 
-# Memastikan direktori 'images' ada saat aplikasi dimulai
-ensure_images_directory_exists()
+if not os.path.exists("buku_digital"):
+    os.makedirs("buku_digital")
 
-# Koneksi ke SQLite
-def create_connection():
-    conn = sqlite3.connect('peternakan.db')
-    return conn
-
-# Inisialisasi database dan tabel
-def init_db():
-    conn = create_connection()
-    cursor = conn.cursor()
+# Kelas Buku yang dimodifikasi untuk menyertakan atribut foto sampul
+class Buku:
+    def __init__(self, judul, penulis, tahun_terbit, foto_sampul=None, status="tersedia"):
+        self.judul = judul
+        self.penulis = penulis
+        self.tahun_terbit = tahun_terbit
+        self.foto_sampul = foto_sampul
+        self.status = status
     
-    # Inisialisasi tabel hewan
-    cursor.execute("PRAGMA table_info(hewan)")
-    columns = [column[1] for column in cursor.fetchall()]
-    if "gambar" not in columns:
-        try:
-            cursor.execute("ALTER TABLE hewan ADD COLUMN gambar TEXT")
-        except sqlite3.OperationalError:
-            pass
+    def info_buku(self):
+        status_display = "tidak tersedia" if self.status == "dipinjam" else "tersedia"
+        return f"Judul: {self.judul}, Penulis: {self.penulis}, Tahun Terbit: {self.tahun_terbit}, Status: {status_display}, Foto Sampul: {self.foto_sampul}"
+
+class BukuDigital(Buku):
+    def __init__(self, judul, penulis, tahun_terbit, ukuran_file, format_file, file_path, foto_sampul=None, status="tersedia"):
+        super().__init__(judul, penulis, tahun_terbit, foto_sampul, status)
+        self.ukuran_file = ukuran_file
+        self.format_file = format_file
+        self.file_path = file_path
     
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS hewan (
-            id TEXT PRIMARY KEY,
-            nama TEXT,
-            umur INTEGER,
-            jenis TEXT,
-            ras_warna_bulu TEXT,
-            berat REAL,
-            gambar TEXT
-        )
-    ''')
-    
-    # Inisialisasi tabel akun
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS akun (
-            username TEXT PRIMARY KEY,
-            password TEXT
-        )
-    ''')
-    
-    conn.commit()
-    cursor.close()
-    conn.close()
+    def info_buku(self):
+        info = super().info_buku()
+        return f"{info}, Ukuran File: {self.ukuran_file}MB, Format: {self.format_file}, Path: {self.file_path}"
 
-# Hash password
-def hash_password(password):
-    return hashlib.sha256(password.encode()).hexdigest()
-
-# Fungsi login
-def login(username, password):
-    conn = create_connection()
-    cursor = conn.cursor()
-    cursor.execute('SELECT * FROM akun WHERE username = ? AND password = ?', (username, hash_password(password)))
-    account = cursor.fetchone()
-    cursor.close()
-    conn.close()
-    return account
-
-# Fungsi daftar akun
-def register(username, password):
-    conn = create_connection()
-    cursor = conn.cursor()
-    cursor.execute('INSERT INTO akun (username, password) VALUES (?, ?)', (username, hash_password(password)))
-    conn.commit()
-    cursor.close()
-    conn.close()
-
-# Kelas Abstrak HewanBase
-class HewanBase(ABC):
-    def __init__(self, id, nama, umur, jenis, ras_warna_bulu, berat, gambar):
-        self.id = id
-        self.nama = nama
-        self.umur = umur
-        self.jenis = jenis
-        self.ras_warna_bulu = ras_warna_bulu
+class BukuFisik(Buku):
+    def __init__(self, judul, penulis, tahun_terbit, jumlah_halaman, berat, foto_sampul=None, status="tersedia"):
+        super().__init__(judul, penulis, tahun_terbit, foto_sampul, status)
+        self.jumlah_halaman = jumlah_halaman
         self.berat = berat
-        self.gambar = gambar
+    
+    def info_buku(self):
+        info = super().info_buku()
+        return f"{info}, Jumlah Halaman: {self.jumlah_halaman}, Berat: {self.berat} gram"
 
-    @abstractmethod
-    def info_hewan(self):
-        pass
-
-# Kelas Anjing
-class Anjing(HewanBase):
-    def __init__(self, id, nama, umur, ras, berat, gambar):
-        super().__init__(id, nama, umur, 'Anjing', ras, berat, gambar)
-        self.ras = ras
-
-    def info_hewan(self):
-        info = f"ID: {self.id}, Nama: {self.nama}, Umur: {self.umur} tahun, Jenis: {self.jenis}"
-        return f"{info}, Ras: {self.ras}, Berat: {self.berat} kg"
-
-# Kelas Kucing
-class Kucing(HewanBase):
-    def __init__(self, id, nama, umur, warna_bulu, berat, gambar):
-        super().__init__(id, nama, umur, 'Kucing', warna_bulu, berat, gambar)
-        self.warna_bulu = warna_bulu
-
-    def info_hewan(self):
-        info = f"ID: {self.id}, Nama: {self.nama}, Umur: {self.umur} tahun, Jenis: {self.jenis}"
-        return f"{info}, Warna Bulu: {self.warna_bulu}, Berat: {self.berat} kg"
-
-# Tambahan 10 jenis hewan
-class Sapi(HewanBase):
-    def __init__(self, id, nama, umur, ras, berat, gambar):
-        super().__init__(id, nama, umur, 'Sapi', ras, berat, gambar)
-        self.ras = ras
-
-    def info_hewan(self):
-        info = f"ID: {self.id}, Nama: {self.nama}, Umur: {self.umur} tahun, Jenis: {self.jenis}"
-        return f"{info}, Ras: {self.ras}, Berat: {self.berat} kg"
-
-class Kambing(HewanBase):
-    def __init__(self, id, nama, umur, ras, berat, gambar):
-        super().__init__(id, nama, umur, 'Kambing', ras, berat, gambar)
-        self.ras = ras
-
-    def info_hewan(self):
-        info = f"ID: {self.id}, Nama: {self.nama}, Umur: {self.umur} tahun, Jenis: {self.jenis}"
-        return f"{info}, Ras: {self.ras}, Berat: {self.berat} kg"
-
-class Ayam(HewanBase):
-    def __init__(self, id, nama, umur, ras, berat, gambar):
-        super().__init__(id, nama, umur, 'Ayam', ras, berat, gambar)
-        self.ras = ras
-
-    def info_hewan(self):
-        info = f"ID: {self.id}, Nama: {self.nama}, Umur: {self.umur} tahun, Jenis: {self.jenis}"
-        return f"{info}, Ras: {self.ras}, Berat: {self.berat} kg"
-
-class Domba(HewanBase):
-    def __init__(self, id, nama, umur, ras, berat, gambar):
-        super().__init__(id, nama, umur, 'Domba', ras, berat, gambar)
-        self.ras = ras
-
-    def info_hewan(self):
-        info = f"ID: {self.id}, Nama: {self.nama}, Umur: {self.umur} tahun, Jenis: {self.jenis}"
-        return f"{info}, Ras: {self.ras}, Berat: {self.berat} kg"
-
-class Kelinci(HewanBase):
-    def __init__(self, id, nama, umur, warna_bulu, berat, gambar):
-        super().__init__(id, nama, umur, 'Kelinci', warna_bulu, berat, gambar)
-        self.warna_bulu = warna_bulu
-
-    def info_hewan(self):
-        info = f"ID: {self.id}, Nama: {self.nama}, Umur: {self.umur} tahun, Jenis: {self.jenis}"
-        return f"{info}, Warna Bulu: {self.warna_bulu}, Berat: {self.berat} kg"
-
-class Bebek(HewanBase):
-    def __init__(self, id, nama, umur, ras, berat, gambar):
-        super().__init__(id, nama, umur, 'Bebek', ras, berat, gambar)
-        self.ras = ras
-
-    def info_hewan(self):
-        info = f"ID: {self.id}, Nama: {self.nama}, Umur: {self.umur} tahun, Jenis: {self.jenis}"
-        return f"{info}, Ras: {self.ras}, Berat: {self.berat} kg"
-
-class Kuda(HewanBase):
-    def __init__(self, id, nama, umur, ras, berat, gambar):
-        super().__init__(id, nama, umur, 'Kuda', ras, berat, gambar)
-        self.ras = ras
-
-    def info_hewan(self):
-        info = f"ID: {self.id}, Nama: {self.nama}, Umur: {self.umur} tahun, Jenis: {self.jenis}"
-        return f"{info}, Ras: {self.ras}, Berat: {self.berat} kg"
-
-class Babi(HewanBase):
-    def __init__(self, id, nama, umur, ras, berat, gambar):
-        super().__init__(id, nama, umur, 'Babi', ras, berat, gambar)
-        self.ras = ras
-
-    def info_hewan(self):
-        info = f"ID: {self.id}, Nama: {self.nama}, Umur: {self.umur} tahun, Jenis: {self.jenis}"
-        return f"{info}, Ras: {self.ras}, Berat: {self.berat} kg"
-
-class Gajah(HewanBase):
-    def __init__(self, id, nama, umur, ras, berat, gambar):
-        super().__init__(id, nama, umur, 'Gajah', ras, berat, gambar)
-        self.ras = ras
-
-    def info_hewan(self):
-        info = f"ID: {self.id}, Nama: {self.nama}, Umur: {self.umur} tahun, Jenis: {self.jenis}"
-        return f"{info}, Ras: {self.ras}, Berat: {self.berat} kg"
-
-class Singa(HewanBase):
-    def __init__(self, id, nama, umur, ras, berat, gambar):
-        super().__init__(id, nama, umur, 'Singa', ras, berat, gambar)
-        self.ras = ras
-
-    def info_hewan(self):
-        info = f"ID: {self.id}, Nama: {self.nama}, Umur: {self.umur} tahun, Jenis: {self.jenis}"
-        return f"{info}, Ras: {self.ras}, Berat: {self.berat} kg"
-
-# Kelas Peternakan
-class Peternakan:
+class Perpustakaan:
     def __init__(self):
-        self.daftar_hewan = []
-
-    def tambah_hewan(self, hewan):
-        conn = create_connection()
-        cursor = conn.cursor()
-        sql = "INSERT INTO hewan (id, nama, umur, jenis, ras_warna_bulu, berat, gambar) VALUES (?, ?, ?, ?, ?, ?, ?)"
-        values = (hewan.id, hewan.nama, hewan.umur, hewan.jenis, hewan.ras_warna_bulu, hewan.berat, hewan.gambar)
-        cursor.execute(sql, values)
-        conn.commit()
-        cursor.close()
-        conn.close()
-
-    def cari_hewan(self, id):
-        conn = create_connection()
-        cursor = conn.cursor()
-        sql = "SELECT * FROM hewan WHERE id = ?"
-        cursor.execute(sql, (id,))
-        result = cursor.fetchone()
-        cursor.close()
-        conn.close()
-        if result:
-            jenis_hewan = result[3]
-            if jenis_hewan == 'Anjing':
-                return Anjing(result[0], result[1], result[2], result[4], result[5], result[6])
-            elif jenis_hewan == 'Kucing':
-                return Kucing(result[0], result[1], result[2], result[4], result[5], result[6])
-            elif jenis_hewan == 'Sapi':
-                return Sapi(result[0], result[1], result[2], result[4], result[5], result[6])
-            elif jenis_hewan == 'Kambing':
-                return Kambing(result[0], result[1], result[2], result[4], result[5], result[6])
-            elif jenis_hewan == 'Ayam':
-                return Ayam(result[0], result[1], result[2], result[4], result[5], result[6])
-            elif jenis_hewan == 'Domba':
-                return Domba(result[0], result[1], result[2], result[4], result[5], result[6])
-            elif jenis_hewan == 'Kelinci':
-                return Kelinci(result[0], result[1], result[2], result[4], result[5], result[6])
-            elif jenis_hewan == 'Bebek':
-                return Bebek(result[0], result[1], result[2], result[4], result[5], result[6])
-            elif jenis_hewan == 'Kuda':
-                return Kuda(result[0], result[1], result[2], result[4], result[5], result[6])
-            elif jenis_hewan == 'Babi':
-                return Babi(result[0], result[1], result[2], result[4], result[5], result[6])
-            elif jenis_hewan == 'Gajah':
-                return Gajah(result[0], result[1], result[2], result[4], result[5], result[6])
-            elif jenis_hewan == 'Singa':
-                return Singa(result[0], result[1], result[2], result[4], result[5], result[6])
+        self.daftar_buku = []  # Inisialisasi daftar_buku
+        self.load_data()
+    
+    def tambah_buku(self, buku):
+        self.daftar_buku.append(buku)
+        self.simpan_data()
+    
+    def cari_buku(self, judul):
+        for buku in self.daftar_buku:
+            if buku.judul.lower() == judul.lower():
+                return buku
         return None
+    
+    def tampilkan_semua_buku(self):
+        return [buku.info_buku() for buku in self.daftar_buku]
+    
+    def tampilkan_semua_buku_df(self):
+        data = [{
+            'Judul': buku.judul,
+            'Penulis': buku.penulis,
+            'Tahun Terbit': buku.tahun_terbit,
+            'Status': "tidak tersedia" if buku.status == "dipinjam" else "tersedia",
+            'Ukuran File (MB)': getattr(buku, 'ukuran_file', None),
+            'Format File': getattr(buku, 'format_file', None),
+            'Jumlah Halaman': getattr(buku, 'jumlah_halaman', None),
+            'Berat (gram)': getattr(buku, 'berat', None),
+            'Foto Sampul': buku.foto_sampul,
+            'File Path': getattr(buku, 'file_path', None)
+        } for buku in self.daftar_buku]
+        
+        df = pd.DataFrame(data)
+        return df
+    
+    def pinjam_buku(self, judul):
+        buku = self.cari_buku(judul)
+        if buku and buku.status == "tersedia":
+            buku.status = "dipinjam"
+            self.simpan_data()
+            return f"Buku '{judul}' berhasil dipinjam."
+        else:
+            return f"Buku '{judul}' tidak tersedia untuk dipinjam."
+    
+    def kembalikan_buku(self, judul):
+        buku = self.cari_buku(judul)
+        if buku and buku.status == "dipinjam":
+            buku.status = "tersedia"
+            self.simpan_data()
+            return f"Buku '{judul}' berhasil dikembalikan."
+        else:
+            return f"Buku '{judul}' tidak sedang dipinjam."
 
-    def edit_hewan(self, id, nama=None, umur=None, ras=None, berat=None, warna_bulu=None, gambar=None):
-        hewan = self.cari_hewan(id)
-        if hewan:
-            conn = create_connection()
-            cursor = conn.cursor()
-            if nama:
-                hewan.nama = nama
-                cursor.execute("UPDATE hewan SET nama = ? WHERE id = ?", (nama, id))
-            if umur:
-                hewan.umur = umur
-                cursor.execute("UPDATE hewan SET umur = ? WHERE id = ?", (umur, id))
-            if isinstance(hewan, (Anjing, Sapi, Kambing, Ayam, Domba, Bebek, Kuda, Babi, Gajah, Singa)) and ras:
-                hewan.ras = ras
-                cursor.execute("UPDATE hewan SET ras_warna_bulu = ? WHERE id = ?", (ras, id))
-            if isinstance(hewan, Kucing) and warna_bulu:
-                hewan.warna_bulu = warna_bulu
-                cursor.execute("UPDATE hewan SET ras_warna_bulu = ? WHERE id = ?", (warna_bulu, id))
-            if berat:
-                hewan.berat = berat
-                cursor.execute("UPDATE hewan SET berat = ? WHERE id = ?", (berat, id))
-            if gambar:
-                hewan.gambar = gambar
-                cursor.execute("UPDATE hewan SET gambar = ? WHERE id = ?", (gambar, id))
-            conn.commit()
-            cursor.close()
-            conn.close()
+    def hapus_buku(self, judul):
+        buku = self.cari_buku(judul)
+        if buku:
+            self.daftar_buku.remove(buku)
+            self.simpan_data()
+            return f"Buku '{judul}' berhasil dihapus."
+        else:
+            return f"Buku '{judul}' tidak ditemukan."
 
-    def hapus_hewan(self, id):
-        conn = create_connection()
-        cursor = conn.cursor()
-        cursor.execute("DELETE FROM hewan WHERE id = ?", (id,))
-        conn.commit()
-        cursor.close()
-        conn.close()
+    def edit_buku(self, judul_lama, buku_baru):
+        buku = self.cari_buku(judul_lama)
+        if buku:
+            buku.judul = buku_baru.judul
+            buku.penulis = buku_baru.penulis
+            buku.tahun_terbit = buku_baru.tahun_terbit
+            buku.status = buku_baru.status
+            buku.foto_sampul = buku_baru.foto_sampul
+            if isinstance(buku, BukuDigital):
+                buku.ukuran_file = buku_baru.ukuran_file
+                buku.format_file = buku_baru.format_file
+                buku.file_path = buku_baru.file_path
+            elif isinstance(buku, BukuFisik):
+                buku.jumlah_halaman = buku_baru.jumlah_halaman
+                buku.berat = buku_baru.berat
+            self.simpan_data()
+            return f"Buku '{judul_lama}' berhasil diupdate."
+        else:
+            return f"Buku '{judul_lama}' tidak ditemukan."
 
-    def tampilkan_semua_hewan(self):
-        conn = create_connection()
-        cursor = conn.cursor()
-        cursor.execute("SELECT id, nama, umur, jenis, ras_warna_bulu, berat, gambar FROM hewan")
-        results = cursor.fetchall()
-        cursor.close()
-        conn.close()
-        return results
+    def simpan_data(self):
+        data = [{
+            'Judul': buku.judul,
+            'Penulis': buku.penulis,
+            'Tahun Terbit': buku.tahun_terbit,
+            'Status': buku.status,
+            'Ukuran File (MB)': getattr(buku, 'ukuran_file', None),
+            'Format File': getattr(buku, 'format_file', None),
+            'Jumlah Halaman': getattr(buku, 'jumlah_halaman', None),
+            'Berat (gram)': getattr(buku, 'berat', None),
+            'Foto Sampul': buku.foto_sampul,
+            'File Path': getattr(buku, 'file_path', None)
+        } for buku in self.daftar_buku]
+        
+        df = pd.DataFrame(data)
+        df.to_excel('data_perpustakaan.xlsx', index=False)
 
-# Inisialisasi database
-init_db()
+    def load_data(self):
+        try:
+            df = pd.read_excel('data_perpustakaan.xlsx')
+            for _, row in df.iterrows():
+                if pd.notna(row['Ukuran File (MB)']):
+                    buku = BukuDigital(
+                        row['Judul'],
+                        row['Penulis'],  # Pastikan nama penulis dimasukkan dengan benar
+                        row['Tahun Terbit'],
+                        row['Ukuran File (MB)'],
+                        row['Format File'],
+                        row['File Path'],
+                        row['Foto Sampul'],
+                        row['Status']
+                    )
+                else:
+                    buku = BukuFisik(
+                        row['Judul'],
+                        row['Penulis'],  # Pastikan nama penulis dimasukkan dengan benar
+                        row['Tahun Terbit'],
+                        row['Jumlah Halaman'],
+                        row['Berat (gram)'],
+                        row['Foto Sampul'],
+                        row['Status']
+                    )
+                self.daftar_buku.append(buku)
+        except FileNotFoundError:
+            pass
 
-# CSS untuk background hijau muda
-st.markdown(
-    """
+# Initialize library
+perpustakaan = Perpustakaan()
+
+# Streamlit Interface
+st.set_page_config(page_title="Sistem Perpustakaan", page_icon="📚", layout="wide")
+
+st.markdown("""
     <style>
     .main {
-        background-color: #DFF2E1;
+        background-image: url("data:image/jpeg;base64,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");
+        background-size: cover;
+    }
+    .css-1d391kg {
+        background-color: rgba(255, 255, 255, 0.8);
     }
     </style>
-    <style>
-    .st-emotion-cache-6qob1r {
-        background-color: #DFF2E1;
-    }
-    </style>
-    """,
-    unsafe_allow_html=True
-)
+    """, unsafe_allow_html=True)
 
-# Session State untuk Login
-if "logged_in" not in st.session_state:
-    st.session_state.logged_in = False
-if "username" not in st.session_state:
-    st.session_state.username = ""
+# Logo aplikasi
+st.image("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAALIAAACUCAMAAAAAoYNxAAAAwFBMVEX////tRlf1mC4BnNQAmNK81+0Akc8AmtMcnNP++fL84+X0jgD97+H+8/XrJT9nt97tS1v2o0b2mzXtQFKZy+Z9ud/sN0v2oD/1lCH1khbuU2LuW2j4xMj62dz2p036yqLb6vUAiMzrEjH0iAD0oqiIwuOo0urF3u/x+PxKqdhAo9bi8vgiqdl2veC12+776ervZXHxfIbzhY/yl533ub785dD73MH61LT5wpP4t3jwbnn4sWv2pFX0q7H3ztD4vIfxcJ07AAAFHElEQVR4nO3bC1uaUBgH8HGZQKZxKTioqUvxSoWVmknt+3+rnXO4BApCm1za8/63erYFh9/z7j2XnPvxAwKBQCAQCAQCgUAgEAgEAoFAIBAIBPL/ptVqnXtISZLOPWQ0j87q6Xn80rt9PMdol+vNdvC627uX5xgtJRd3mo6jdd5Wz71/qre0wVYDmThoVCi5zdBojKZpTPflL4stbV1VQYZhsDTNMsgMI8v4U7u96n1ZfbnZN5ssqyiqUi7ZMzNa2xnffmWE9cBtIuwlYIUtl+ybGU3vPOWutLRTTIQrbKh9g1XZssmBGbe1/pxrKkqvxIvTVxW1z7Llk0MzbmrmJRMtbVGTCvG06xthV5RLjpi19lNGS693TV+oqGy4WJROjpgZXX45dedWRT6YjRa4fHLUzLSd1OaQ9mGJFTL7qiTHzLqT0hxr1wzEtImVSslxs9xLumsTNAXZP477onRyzKzpCQ29NUOxQede5eSYmWm/H94zGAU0ldS3rx6KKyDHzdqBeYBCsUpKXA9yvDfi5m0oVvp9Q8E/60E+6I2Pzxs2zVCMDxUJ3MrIcbMernWXYY3JvEtYLCokx3uje+GL3YBsGCncCsnx9fnJu/x3sIPgFlaUVHNV5PjePSZXD8Jd2qBnixLJw2uaDHLcjI8bUiCm0y5l6oVk7xnDM5F//uIbjQafRY6aY2RW7asnWtkj00f8+nkucoPjOEHMJEfP/DEyS75vyiCLAn5Io3Typ/mAzKq1JYfmQ/LJVEsOzN+J7Ju/Fdl/Helbkb9fYwAZyEAGMpDrS04/1deWzOYz14ucy1wrMpurzjUj5zHXjpxtrhs5h7l25OzeqIwsp770kmWuiix3u04q+bS5KnK30+l2U8gZdS6WfKfrGnkrRhLZ0ZxUcpoZ4ZijIsmtl/fx05vjdBhNj7rlDq4x/pFOPjIjE7GK6+53r4OBVCDZT+u29/7s6KFaxiXuyhFxElmNe93fg8068kaogsk0Fx/vb3eemtQ4Ck4+fIZmc+QO1oevKZdBJnkcd3RN7shOR+vKWWTPjJDxmvQuswLInGjd4FjWZDodLmfhF3srPOnwAhcrcsoRX2VNdbcJb50th9PpxPLGJY84N5njvTQavDi/sibD4Mu3Y0aP/YtUKhmh13Vw13BiXc1FMpqXQsiR4EcIi7m1DNCrtpZNRs1d0MBLa74QAmckBZJJ8CMbi2tffevEFr0EMkLBmw6X1wtcWiFpzILJRI0/rKF3EZ6Ip8imMfCuG1p846i65ZE527Z50Ufj7kgnN/deE0/vxeT6lkQWbI7n8Id47y0g47s08sgr8ew+pSHKIgu8jVtDtAU8GycU3ZO1JDJS6cI2mxzPt5LJtriwRdwadA+4GpIr8Sw8JpsubYrhVWp/lUXGWFvkRFGkv+MXD+TSR98cITddutk9LLJKXDRZ4Eh1bS5sTYG3yLWtNz1ONj2xdbqJiyeTx2NyXNGYk4ZurbQoGe2IeDbPboqiq0y6wj6sGz8nG8vjSv8koz0RL+c5mqJgMm5iPPO4I/OCmFuyHpCRSsV52tgb4KEgMl6PBdzLCQ5eoHWWNY+MVLJHL4W84iLJNil00nziRWL+kCl5xJLVbSnmFhdHxsf9hE72H0r7+f2Oksmel7uPSc7Yy/xh8J539Gf+cfqGrBtdQu7jX8xujm9Oz9nI0/nVFzInf7nkP/lckqn38LV7p2ciQyAQCAQCgUAgEAgEAoFAIBAIBAKB/K/5A07Mnf8SEIjeAAAAAElFTkSuQmCC", width=200)
 
-# Fungsi untuk menyimpan file yang diunggah
-def save_uploaded_file(uploaded_file):
-    if not os.path.exists("images"):
-        os.makedirs("images")
-    with open(os.path.join("images", uploaded_file.name), "wb") as f:
-        f.write(uploaded_file.getbuffer())
-    return uploaded_file.name
+st.title("Sistem Perpustakaan Sederhana")
 
-# Login dan Daftar Akun
-if not st.session_state.logged_in:
-    selected = option_menu(
-        menu_title=None,
-        options=["Login", "Daftar Akun"],
-        icons=["person", "person-plus"],
-        menu_icon="cast",
-        default_index=0,
-        orientation="horizontal",
-    )
+tabs = st.tabs(["Tambah Buku", "Cari Buku", "Tampilkan Semua Buku", "Pinjam Buku", "Kembalikan Buku", "Hapus Buku", "Edit Buku"])
 
-    # Login
-    if selected == "Login":
-        st.title('Login')
-        with st.form('Login'):
-            username = st.text_input('Username')
-            password = st.text_input('Password', type='password')
-            submitted = st.form_submit_button('Login')
+with tabs[0]:
+    st.subheader("Tambah Buku Baru")
+    tipe_buku = st.selectbox("Tipe Buku", ["Buku Fisik", "Buku Digital"])
+    judul = st.text_input("Judul Buku")
+    penulis = st.text_input("Penulis Buku")
+    tahun_terbit = st.number_input("Tahun Terbit", min_value=1500, max_value=2024, step=1)
+    foto_sampul = st.file_uploader("Unggah Foto Sampul", type=["jpg", "png", "jpeg"])
+    
+    if foto_sampul is not None:
+        foto_sampul_path = os.path.join("sampul_buku", foto_sampul.name)
+        with open(foto_sampul_path, "wb") as f:
+            f.write(foto_sampul.getbuffer())
+    
+    if tipe_buku == "Buku Digital":
+        ukuran_file = st.number_input("Ukuran File (MB)", min_value=0.1)
+        format_file = st.selectbox("Format File", ["PDF", "EPUB", "MOBI"])
+        file_buku = st.file_uploader("Unggah File Buku", type=["pdf", "epub", "mobi"])
+        
+        if file_buku is not None:
+            file_path = os.path.join("buku_digital", file_buku.name)
+            with open(file_path, "wb") as f:
+                f.write(file_buku.getbuffer())
+            
+        if st.button("Tambah Buku Digital"):
+            buku = BukuDigital(judul, penulis, tahun_terbit, ukuran_file, format_file, file_path, foto_sampul_path)
+            perpustakaan.tambah_buku(buku)
+            st.success(f"Buku digital '{judul}' berhasil ditambahkan.")
+    else:
+        jumlah_halaman = st.number_input("Jumlah Halaman", min_value=1)
+        berat = st.number_input("Berat (gram)", min_value=1)
+        if st.button("Tambah Buku Fisik"):
+            buku = BukuFisik(judul, penulis, tahun_terbit, jumlah_halaman, berat, foto_sampul_path)
+            perpustakaan.tambah_buku(buku)
+            st.success(f"Buku fisik '{judul}' berhasil ditambahkan.")
+            
+with tabs[1]:
+    st.subheader("Cari Buku")
+    judul = st.text_input("Masukkan Judul Buku")
+    if st.button("Cari"):
+        buku = perpustakaan.cari_buku(judul)
+        if buku:
+            st.write(buku.info_buku())
+            if buku.foto_sampul:
+                st.image(buku.foto_sampul, caption=buku.judul)
+        else:
+            st.warning("Buku tidak ditemukan.")
 
-            if submitted:
-                account = login(username, password)
-                if account:
-                    st.session_state.logged_in = True
-                    st.session_state.username = username
-                    st.success('Login berhasil!')
-                else:
-                    st.error('Username atau password salah.')
+with tabs[2]:
+    st.subheader("Daftar Semua Buku")
+    df_buku = perpustakaan.tampilkan_semua_buku_df()
+    st.dataframe(df_buku)
 
-    # Daftar Akun
-    elif selected == "Daftar Akun":
-        st.title('Daftar Akun')
-        with st.form('Daftar Akun'):
-            username = st.text_input('Username')
-            password = st.text_input('Password', type='password')
-            submitted = st.form_submit_button('Daftar')
+with tabs[3]:
+    st.subheader("Pinjam Buku")
+    judul = st.text_input("Masukkan Judul Buku yang Akan Dipinjam")
+    if st.button("Pinjam"):
+        pesan = perpustakaan.pinjam_buku(judul)
+        st.write(pesan)
 
-            if submitted:
-                register(username, password)
-                st.success('Akun berhasil didaftarkan!')
+with tabs[4]:
+    st.subheader("Kembalikan Buku")
+    judul = st.text_input("Masukkan Judul Buku yang Akan Dikembalikan")
+    if st.button("Kembalikan"):
+        pesan = perpustakaan.kembalikan_buku(judul)
+        st.write(pesan)
 
-else:
-    st.sidebar.markdown(f"**Logged in as: {st.session_state.username}**")
+with tabs[5]:
+    st.subheader("Hapus Buku")
+    judul = st.text_input("Masukkan Judul Buku yang Akan Dihapus")
+    if st.button("Hapus"):
+        pesan = perpustakaan.hapus_buku(judul)
+        st.write(pesan)
 
-    # Menu Logout
-    if st.sidebar.button('Logout'):
-        st.session_state.logged_in = False
-        st.session_state.username = ""
-        st.success('Berhasil logout!')
-
-    # Navbar dengan Streamlit Option Menu
-    selected = option_menu(
-        menu_title=None,
-        options=["Tambah Hewan", "Tampilkan Semua Hewan", "Cari dan Edit Hewan", "Hapus Hewan"],
-        icons=["plus-circle", "list", "search", "trash"],
-        menu_icon="cast",
-        default_index=0,
-        orientation="horizontal",
-    )
-
-    # Inisialisasi peternakan
-    peternakan = Peternakan()
-
-    # Tambah Hewan
-    if selected == "Tambah Hewan":
-        st.title('Tambah Hewan')
-        with st.form('Tambah Hewan'):
-            id = st.text_input('ID')
-            nama = st.text_input('Nama')
-            umur = st.number_input('Umur', min_value=0)
-            jenis = st.selectbox('Jenis', ['Anjing', 'Kucing', 'Sapi', 'Kambing', 'Ayam', 'Domba', 'Kelinci', 'Bebek', 'Kuda', 'Babi', 'Gajah', 'Singa'])
-            if jenis in ['Anjing', 'Sapi', 'Kambing', 'Ayam', 'Domba', 'Bebek', 'Kuda', 'Babi', 'Gajah', 'Singa']:
-                ras = st.text_input('Ras')
-                berat = st.number_input('Berat', min_value=0.0)
+with tabs[6]:
+    st.subheader("Edit Buku")
+    judul_lama = st.text_input("Masukkan Judul Buku yang Akan Diedit")
+    if st.button("Cari Buku untuk Diedit"):
+        buku = perpustakaan.cari_buku(judul_lama)
+        if buku:
+            judul = st.text_input("Judul Buku", value=buku.judul)
+            penulis = st.text_input("Penulis Buku", value=buku.penulis)
+            tahun_terbit = st.number_input("Tahun Terbit", min_value=1500, max_value=2024, step=1, value=buku.tahun_terbit)
+            foto_sampul = st.file_uploader("Unggah Foto Sampul Baru", type=["jpg", "png", "jpeg"])
+            
+            if foto_sampul is not None:
+                foto_sampul_path = os.path.join("sampul_buku", foto_sampul.name)
+                with open(foto_sampul_path, "wb") as f:
+                    f.write(foto_sampul.getbuffer())
             else:
-                warna_bulu = st.text_input('Warna Bulu')
-                berat = st.number_input('Berat', min_value=0.0)
-
-            gambar = st.file_uploader("Unggah Gambar Hewan", type=["jpg", "png", "jpeg"])
-            submitted = st.form_submit_button('Tambah Hewan')
-
-            if submitted:
-                if gambar is not None:
-                    gambar_name = save_uploaded_file(gambar)
+                foto_sampul_path = buku.foto_sampul
+            
+            if isinstance(buku, BukuDigital):
+                ukuran_file = st.number_input("Ukuran File (MB)", min_value=0.1, value=buku.ukuran_file)
+                format_file = st.selectbox("Format File", ["PDF", "EPUB", "MOBI"], index=["PDF", "EPUB", "MOBI"].index(buku.format_file))
+                file_buku = st.file_uploader("Unggah File Buku Baru", type=["pdf", "epub", "mobi"])
+                
+                if file_buku is not None:
+                    file_path = os.path.join("buku_digital", file_buku.name)
+                    with open(file_path, "wb") as f:
+                        f.write(file_buku.getbuffer())
                 else:
-                    gambar_name = None
-
-                if jenis == 'Anjing':
-                    hewan = Anjing(id, nama, umur, ras, berat, gambar_name)
-                elif jenis == 'Kucing':
-                    hewan = Kucing(id, nama, umur, warna_bulu, berat, gambar_name)
-                elif jenis == 'Sapi':
-                    hewan = Sapi(id, nama, umur, ras, berat, gambar_name)
-                elif jenis == 'Kambing':
-                    hewan = Kambing(id, nama, umur, ras, berat, gambar_name)
-                elif jenis == 'Ayam':
-                    hewan = Ayam(id, nama, umur, ras, berat, gambar_name)
-                elif jenis == 'Domba':
-                    hewan = Domba(id, nama, umur, ras, berat, gambar_name)
-                elif jenis == 'Kelinci':
-                    hewan = Kelinci(id, nama, umur, warna_bulu, berat, gambar_name)
-                elif jenis == 'Bebek':
-                    hewan = Bebek(id, nama, umur, ras, berat, gambar_name)
-                elif jenis == 'Kuda':
-                    hewan = Kuda(id, nama, umur, ras, berat, gambar_name)
-                elif jenis == 'Babi':
-                    hewan = Babi(id, nama, umur, ras, berat, gambar_name)
-                elif jenis == 'Gajah':
-                    hewan = Gajah(id, nama, umur, ras, berat, gambar_name)
-                elif jenis == 'Singa':
-                    hewan = Singa(id, nama, umur, ras, berat, gambar_name)
-                peternakan.tambah_hewan(hewan)
-                st.success(f'{jenis} berhasil ditambahkan!')
-
-    # Tampilkan Semua Hewan
-    elif selected == "Tampilkan Semua Hewan":
-        st.title('Daftar Hewan')
-        if st.button('Tampilkan Semua Hewan'):
-            results = peternakan.tampilkan_semua_hewan()
-            if results:
-                df = pd.DataFrame(results, columns=["ID", "Nama", "Umur", "Jenis", "Ras/Warna Bulu", "Berat", "Gambar"])
-                st.dataframe(df)
-                for index, row in df.iterrows():
-                    if row["Gambar"]:
-                        image_path = os.path.join("images", row["Gambar"])
-                        if os.path.exists(image_path):
-                            st.image(image_path, width=100, caption=f"Gambar untuk {row['Nama']}")
-                        else:
-                            st.write(f"Gambar tidak ditemukan untuk {row['Nama']}")
+                    file_path = buku.file_path
+                
+                buku_baru = BukuDigital(judul, penulis, tahun_terbit, ukuran_file, format_file, file_path, foto_sampul_path)
             else:
-                st.write('Tidak ada hewan yang terdaftar.')
-
-    # Cari dan Edit Hewan
-    elif selected == "Cari dan Edit Hewan":
-        st.title('Cari dan Edit Hewan')
-        with st.form('Cari dan Edit Hewan'):
-            id_cari = st.text_input('Cari Hewan Berdasarkan ID')
-            submit_cari = st.form_submit_button('Cari Hewan')
-            if submit_cari:
-                hewan = peternakan.cari_hewan(id_cari)
-                if hewan:
-                    st.write(hewan.info_hewan())
-                    if hewan.gambar:
-                        image_path = os.path.join("images", hewan.gambar)
-                        if os.path.exists(image_path):
-                            st.image(image_path, width=100)
-                    nama_edit = st.text_input('Edit Nama', value=hewan.nama)
-                    umur_edit = st.number_input('Edit Umur', min_value=0, value=hewan.umur)
-                    berat_edit = st.number_input('Edit Berat', min_value=0.0, value=hewan.berat)
-                    gambar_edit = st.file_uploader("Unggah Gambar Baru", type=["jpg", "png", "jpeg"])
-                    if isinstance(hewan, (Anjing, Sapi, Kambing, Ayam, Domba, Bebek, Kuda, Babi, Gajah, Singa)):
-                        ras_edit = st.text_input('Edit Ras', value=hewan.ras)
-                        warna_bulu_edit = None
-                    else:
-                        ras_edit = None
-                        warna_bulu_edit = st.text_input('Edit Warna Bulu', value=hewan.warna_bulu)
-
-                    submit_edit = st.form_submit_button('Edit Hewan')
-                    if submit_edit:
-                        if gambar_edit is not None:
-                            gambar_name_edit = save_uploaded_file(gambar_edit)
-                        else:
-                            gambar_name_edit = hewan.gambar
-                        peternakan.edit_hewan(id_cari, nama_edit, umur_edit, ras_edit, berat_edit, warna_bulu_edit, gambar_name_edit)
-                        st.success('Hewan berhasil diubah!')
-                else:
-                    st.error('Hewan tidak ditemukan!')
-
-    # Hapus Hewan
-    elif selected == "Hapus Hewan":
-        st.title('Hapus Hewan')
-        with st.form('Hapus Hewan'):
-            id_hapus = st.text_input('ID Hewan yang akan Dihapus')
-            submit_hapus = st.form_submit_button('Hapus Hewan')
-            if submit_hapus:
-                peternakan.hapus_hewan(id_hapus)
-                st.success('Hewan berhasil dihapus!')
+                jumlah_halaman = st.number_input("Jumlah Halaman", min_value=1, value=buku.jumlah_halaman)
+                berat = st.number_input("Berat (gram)", min_value=1, value=buku.berat)
+                
+                buku_baru = BukuFisik(judul, penulis, tahun_terbit, jumlah_halaman, berat, foto_sampul_path)
+            
+            if st.button("Update Buku"):
+                pesan = perpustakaan.edit_buku(judul_lama, buku_baru)
+                st.write(pesan)
+        else:
+            st.warning("Buku tidak ditemukan.")
