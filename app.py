@@ -2,7 +2,42 @@ import streamlit as st
 from abc import ABC, abstractmethod
 import pandas as pd
 from streamlit_option_menu import option_menu
-import shelve
+import sqlite3
+
+# Koneksi ke database SQLite
+def create_connection():
+    return sqlite3.connect('perpustakaan.db')
+
+# Inisialisasi tabel jika belum ada
+def initialize_db():
+    conn = create_connection()
+    cursor = conn.cursor()
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS buku (
+            id_buku INTEGER PRIMARY KEY,
+            judul TEXT,
+            penulis TEXT,
+            tahun_terbit INTEGER,
+            status TEXT,
+            ukuran_file REAL,
+            format_file TEXT,
+            jumlah_halaman INTEGER,
+            berat REAL
+        )
+    ''')
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS peminjaman (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id_buku INTEGER,
+            judul TEXT,
+            nama_peminjam TEXT,
+            status TEXT
+        )
+    ''')
+    conn.commit()
+    conn.close()
+
+initialize_db()
 
 # Styling
 st.markdown(
@@ -92,69 +127,84 @@ class Perpustakaan:
         self.laporan_peminjaman = []
         self.muat_data()
 
-    def simpan_data(self):
-        with shelve.open('data_perpustakaan') as db:
-            db['daftar_buku'] = self.daftar_buku
-            db['laporan_peminjaman'] = self.laporan_peminjaman
+    def simpan_data(self, query, data):
+        conn = create_connection()
+        cursor = conn.cursor()
+        cursor.execute(query, data)
+        conn.commit()
+        cursor.close()
+        conn.close()
 
     def muat_data(self):
-        with shelve.open('data_perpustakaan') as db:
-            self.daftar_buku = db.get('daftar_buku', [])
-            self.laporan_peminjaman = db.get('laporan_peminjaman', [])
+        conn = create_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM buku")
+        self.daftar_buku = cursor.fetchall()
+        cursor.execute("SELECT * FROM peminjaman")
+        self.laporan_peminjaman = cursor.fetchall()
+        cursor.close()
+        conn.close()
 
     def tambah_buku(self, buku):
-        self.daftar_buku.append(buku)
-        self.simpan_data()
+        if isinstance(buku, BukuDigital):
+            query = "INSERT INTO buku (id_buku, judul, penulis, tahun_terbit, status, ukuran_file, format_file) VALUES (?, ?, ?, ?, ?, ?, ?)"
+            data = (buku.id_buku, buku.judul, buku.penulis, buku.tahun_terbit, buku.status, buku.ukuran_file, buku.format_file)
+        elif isinstance(buku, BukuFisik):
+            query = "INSERT INTO buku (id_buku, judul, penulis, tahun_terbit, status, jumlah_halaman, berat) VALUES (?, ?, ?, ?, ?, ?, ?)"
+            data = (buku.id_buku, buku.judul, buku.penulis, buku.tahun_terbit, buku.status, buku.jumlah_halaman, buku.berat)
+        self.simpan_data(query, data)
+        self.muat_data()
         st.success(f"Buku '{buku.judul}' berhasil ditambahkan dengan ID {buku.id_buku}.")
         self.tampilkan_semua_buku()
 
     def cari_buku(self, id_buku):
         for buku in self.daftar_buku:
-            if buku.id_buku == id_buku:
+            if buku[0] == id_buku:  # Indeks 0 adalah id_buku
                 return buku
         return None
 
     def tampilkan_semua_buku(self):
-        data = [buku.info_buku() for buku in self.daftar_buku]
-        df = pd.DataFrame(data)
+        df = pd.DataFrame(self.daftar_buku, columns=["ID", "Judul", "Penulis", "Tahun Terbit", "Status", "Ukuran File", "Format File", "Jumlah Halaman", "Berat"])
         st.table(df)
 
     def hitung_buku_tersedia(self):
-        return sum(1 for buku in self.daftar_buku if buku.status == "tersedia")
+        return sum(1 for buku in self.daftar_buku if buku[4] == "tersedia")  # Indeks 4 adalah status
 
     def pinjam_buku(self, id_buku, nama_peminjam):
         buku = self.cari_buku(id_buku)
-        if buku and buku.status == "tersedia":
-            buku.status = "dipinjam"
-            self.laporan_peminjaman.append({
-                "ID Buku": buku.id_buku,
-                "Judul": buku.judul,
-                "Nama Peminjam": nama_peminjam,
-                "Status": "dipinjam"
-            })
-            self.simpan_data()
-            st.success(f"Buku '{buku.judul}' berhasil dipinjam oleh {nama_peminjam}.")
+        if buku and buku[4] == "tersedia":  # Indeks 4 adalah status
+            query = "INSERT INTO peminjaman (id_buku, judul, nama_peminjam, status) VALUES (?, ?, ?, ?)"
+            data = (buku[0], buku[1], nama_peminjam, "dipinjam")  # Indeks 0 adalah id_buku, 1 adalah judul
+            self.simpan_data(query, data)
+            query = "UPDATE buku SET status = ? WHERE id_buku = ?"
+            data = ("dipinjam", id_buku)
+            self.simpan_data(query, data)
+            self.muat_data()
+            st.success(f"Buku '{buku[1]}' berhasil dipinjam oleh {nama_peminjam}.")  # Indeks 1 adalah judul
         else:
             st.error(f"Buku dengan ID {id_buku} tidak tersedia untuk dipinjam.")
 
     def kembalikan_buku(self, id_buku):
         buku = self.cari_buku(id_buku)
-        if buku and buku.status == "dipinjam":
-            buku.status = "tersedia"
-            for laporan in self.laporan_peminjaman:
-                if laporan["ID Buku"] == id_buku and laporan["Status"] == "dipinjam":
-                    laporan["Status"] = "dikembalikan"
-                    break
-            self.simpan_data()
-            st.success(f"Buku '{buku.judul}' berhasil dikembalikan.")
+        if buku and buku[4] == "dipinjam":  # Indeks 4 adalah status
+            query = "UPDATE buku SET status = ? WHERE id_buku = ?"
+            data = ("tersedia", id_buku)
+            self.simpan_data(query, data)
+            query = "UPDATE peminjaman SET status = ? WHERE id_buku = ? AND status = ?"
+            data = ("dikembalikan", id_buku, "dipinjam")
+            self.simpan_data(query, data)
+            self.muat_data()
+            st.success(f"Buku '{buku[1]}' berhasil dikembalikan.")  # Indeks 1 adalah judul
         else:
             st.error(f"Buku dengan ID {id_buku} tidak sedang dipinjam.")
 
     def hapus_buku(self, id_buku):
         buku = self.cari_buku(id_buku)
         if buku:
-            self.daftar_buku.remove(buku)
-            self.simpan_data()
+            query = "DELETE FROM buku WHERE id_buku = ?"
+            data = (id_buku,)
+            self.simpan_data(query, data)
+            self.muat_data()
             st.success(f"Buku dengan ID {id_buku} berhasil dihapus.")
             self.tampilkan_semua_buku()
         else:
@@ -164,27 +214,21 @@ class Perpustakaan:
         buku = self.cari_buku(id_buku)
         if buku:
             for key, value in kwargs.items():
-                if hasattr(buku, key):
-                    setattr(buku, key, value)
-            self.simpan_data()
+                query = f"UPDATE buku SET {key} = ? WHERE id_buku = ?"
+                data = (value, id_buku)
+                self.simpan_data(query, data)
+            self.muat_data()
             st.success(f"Buku dengan ID {id_buku} berhasil diperbarui.")
             self.tampilkan_semua_buku()
         else:
             st.error(f"Buku dengan ID {id_buku} tidak ditemukan.")
 
     def tampilkan_laporan_peminjaman(self):
-        df = pd.DataFrame(self.laporan_peminjaman)
+        df = pd.DataFrame(self.laporan_peminjaman, columns=["ID", "ID Buku", "Judul", "Nama Peminjam", "Status"])
         st.table(df)
 
     def simpan_ke_excel(self):
-        data = []
-        for buku in self.daftar_buku:
-            if isinstance(buku, BukuDigital):
-                data.append([buku.id_buku, buku.judul, buku.penulis, buku.tahun_terbit, buku.status, buku.ukuran_file, buku.format_file, None, None])
-            elif isinstance(buku, BukuFisik):
-                data.append([buku.id_buku, buku.judul, buku.penulis, buku.tahun_terbit, buku.status, None, None, buku.jumlah_halaman, buku.berat])
-
-        df = pd.DataFrame(data, columns=['ID', 'Judul', 'Penulis', 'Tahun Terbit', 'Status', 'Ukuran File', 'Format File', 'Jumlah Halaman', 'Berat'])
+        df = pd.DataFrame(self.daftar_buku, columns=["ID", "Judul", "Penulis", "Tahun Terbit", "Status", "Ukuran File", "Format File", "Jumlah Halaman", "Berat"])
         df.to_excel('aplikasi_perpustakaan.xlsx', index=False)
 
 # Inisialisasi perpustakaan dalam session state
@@ -274,7 +318,7 @@ elif page == "Cari Buku":
     if st.button("Cari Buku"):
         buku = st.session_state.perpustakaan.cari_buku(id_cari)
         if buku:
-            st.write(buku.info_buku())
+            st.write(buku)
         else:
             st.error(f"Buku dengan ID {id_cari} tidak ditemukan.")
 
