@@ -71,6 +71,7 @@ st.markdown(
     """, unsafe_allow_html=True
 )
 
+# Kelas Abstrak untuk Buku
 class BukuBase(ABC):
     def __init__(self, id_buku, judul, penulis, tahun_terbit):
         self.id_buku = id_buku
@@ -83,6 +84,7 @@ class BukuBase(ABC):
     def info_buku(self):
         pass
 
+# Kelas Buku Digital
 class BukuDigital(BukuBase):
     def __init__(self, id_buku, judul, penulis, tahun_terbit, ukuran_file, format_file):
         super().__init__(id_buku, judul, penulis, tahun_terbit)
@@ -102,6 +104,7 @@ class BukuDigital(BukuBase):
             "Berat": None
         }
 
+# Kelas Buku Fisik
 class BukuFisik(BukuBase):
     def __init__(self, id_buku, judul, penulis, tahun_terbit, jumlah_halaman, berat):
         super().__init__(id_buku, judul, penulis, tahun_terbit)
@@ -121,6 +124,7 @@ class BukuFisik(BukuBase):
             "Berat": self.berat
         }
 
+# Kelas untuk Perpustakaan
 class Perpustakaan:
     def __init__(self):
         self.daftar_buku = []
@@ -232,8 +236,14 @@ class Perpustakaan:
         df.to_excel('aplikasi_perpustakaan.xlsx', index=False)
 
 # Inisialisasi perpustakaan dalam session state
-if 'perpustakaan' not in st.session_state:
-    st.session_state.perpustakaan = Perpustakaan()
+if 'daftar_buku' not in st.session_state:
+    st.session_state.daftar_buku = []
+if 'laporan_peminjaman' not in st.session_state:
+    st.session_state.laporan_peminjaman = []
+
+perpustakaan = Perpustakaan()
+st.session_state.daftar_buku = perpustakaan.daftar_buku
+st.session_state.laporan_peminjaman = perpustakaan.laporan_peminjaman
 
 # Antarmuka pengguna dengan Streamlit
 st.title("Aplikasi Perpustakaan")
@@ -262,7 +272,7 @@ if page == "Tambah Buku":
         if st.button("Tambah Buku Digital"):
             if judul and penulis and tahun_terbit and ukuran_file and format_file:
                 buku = BukuDigital(id_buku, judul, penulis, tahun_terbit, ukuran_file, format_file)
-                st.session_state.perpustakaan.tambah_buku(buku)
+                perpustakaan.tambah_buku(buku)
             else:
                 st.error("Harap isi semua kolom.")
 
@@ -270,30 +280,30 @@ if page == "Tambah Buku":
         jumlah_halaman = st.number_input("Jumlah Halaman", min_value=1, step=1)
         berat = st.number_input("Berat (gram)", min_value=0.0, step=0.1)
         if st.button("Tambah Buku Fisik"):
-            if judul and penulis and tahun_terbit and jumlah_halaman and berat:
+            if judul and penulis dan tahun_terbit dan jumlah_halaman dan berat:
                 buku = BukuFisik(id_buku, judul, penulis, tahun_terbit, jumlah_halaman, berat)
-                st.session_state.perpustakaan.tambah_buku(buku)
+                perpustakaan.tambah_buku(buku)
             else:
                 st.error("Harap isi semua kolom.")
 
 elif page == "Daftar Buku":
     st.header("Daftar Buku di Perpustakaan")
     if st.button("Tampilkan Semua Buku"):
-        st.session_state.perpustakaan.tampilkan_semua_buku()
-    st.write(f"Jumlah buku tersedia: {st.session_state.perpustakaan.hitung_buku_tersedia()}")
+        perpustakaan.tampilkan_semua_buku()
+    st.write(f"Jumlah buku tersedia: {perpustakaan.hitung_buku_tersedia()}")
 
 elif page == "Pinjam Buku":
     st.header("Pinjam Buku")
     id_pinjam = st.number_input("ID Buku untuk Dipinjam", min_value=1, step=1)
     nama_peminjam = st.text_input("Nama Peminjam")
     if st.button("Pinjam Buku"):
-        st.session_state.perpustakaan.pinjam_buku(id_pinjam, nama_peminjam)
+        perpustakaan.pinjam_buku(id_pinjam, nama_peminjam)
 
 elif page == "Kembalikan Buku":
     st.header("Kembalikan Buku")
     id_kembali = st.number_input("ID Buku untuk Dikembalikan", min_value=1, step=1)
     if st.button("Kembalikan Buku"):
-        st.session_state.perpustakaan.kembalikan_buku(id_kembali)
+        perpustakaan.kembalikan_buku(id_kembali)
 
 elif page == "Edit Buku":
     st.header("Edit Buku")
@@ -302,7 +312,7 @@ elif page == "Edit Buku":
     new_value = st.text_input(f"Nilai baru untuk {field_to_edit}")
     if st.button("Edit Buku"):
         if new_value:
-            st.session_state.perpustakaan.edit_buku(id_edit, **{field_to_edit: new_value})
+            perpustakaan.edit_buku(id_edit, **{field_to_edit: new_value})
         else:
             st.error("Harap isi nilai baru untuk field yang akan diedit.")
 
@@ -310,13 +320,13 @@ elif page == "Hapus Buku":
     st.header("Hapus Buku")
     id_hapus = st.number_input("ID Buku untuk Dihapus", min_value=1, step=1)
     if st.button("Hapus Buku"):
-        st.session_state.perpustakaan.hapus_buku(id_hapus)
+        perpustakaan.hapus_buku(id_hapus)
 
 elif page == "Cari Buku":
     st.header("Cari Buku")
     id_cari = st.number_input("ID Buku untuk Dicari", min_value=1, step=1)
     if st.button("Cari Buku"):
-        buku = st.session_state.perpustakaan.cari_buku(id_cari)
+        buku = perpustakaan.cari_buku(id_cari)
         if buku:
             st.write(buku)
         else:
@@ -325,4 +335,4 @@ elif page == "Cari Buku":
 elif page == "Laporan Peminjaman":
     st.header("Laporan Peminjaman Buku")
     if st.button("Tampilkan Laporan Peminjaman"):
-        st.session_state.perpustakaan.tampilkan_laporan_peminjaman()
+        perpustakaan.tampilkan_laporan_peminjaman()
