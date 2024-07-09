@@ -280,7 +280,7 @@ if page == "Tambah Buku":
         jumlah_halaman = st.number_input("Jumlah Halaman", min_value=1, step=1)
         berat = st.number_input("Berat (gram)", min_value=0.0, step=0.1)
         if st.button("Tambah Buku Fisik"):
-            if judul and penulis dan tahun_terbit dan jumlah_halaman dan berat:
+            if judul and penulis and tahun_terbit and jumlah_halaman dan berat:
                 buku = BukuFisik(id_buku, judul, penulis, tahun_terbit, jumlah_halaman, berat)
                 perpustakaan.tambah_buku(buku)
             else:
