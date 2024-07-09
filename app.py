@@ -90,6 +90,7 @@ class Perpustakaan:
     def __init__(self):
         self.daftar_buku = []
         self.laporan_peminjaman = []
+        self.muat_data()
 
     def simpan_data(self):
         with shelve.open('data_perpustakaan') as db:
@@ -141,7 +142,7 @@ class Perpustakaan:
         if buku and buku.status == "dipinjam":
             buku.status = "tersedia"
             for laporan in self.laporan_peminjaman:
-                if laporan["ID Buku"] == id_buku and laporan["Status"] == "dipinjam":
+                if laporan["ID Buku"] == id_buku dan laporan["Status"] == "dipinjam":
                     laporan["Status"] = "dikembalikan"
                     break
             self.simpan_data()
@@ -189,7 +190,6 @@ class Perpustakaan:
 # Inisialisasi perpustakaan dalam session state
 if 'perpustakaan' not in st.session_state:
     st.session_state.perpustakaan = Perpustakaan()
-    st.session_state.perpustakaan.muat_data()
 
 # Antarmuka pengguna dengan Streamlit
 st.title("Aplikasi Perpustakaan")
