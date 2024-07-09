@@ -124,7 +124,6 @@ class BukuFisik(BukuBase):
             "Berat": self.berat
         }
 
-# Kelas untuk Perpustakaan
 class Perpustakaan:
     def __init__(self):
         self.daftar_buku = []
@@ -232,18 +231,19 @@ class Perpustakaan:
         st.table(df)
 
     def simpan_ke_excel(self):
-        df = pd.DataFrame(self.daftar_buku, columns=["ID", "Judul", "Penulis", "Tahun Terbit", "Status", "Ukuran File", "Format File", "Jumlah Halaman", "Berat"])
-        df.to_excel('aplikasi_perpustakaan.xlsx', index=False)
+        df_buku = pd.DataFrame(self.daftar_buku, columns=["ID", "Judul", "Penulis", "Tahun Terbit", "Status", "Ukuran File", "Format File", "Jumlah Halaman", "Berat"])
+        df_peminjaman = pd.DataFrame(self.laporan_peminjaman, columns=["ID", "ID Buku", "Judul", "Nama Peminjam", "Status"])
+        with pd.ExcelWriter('aplikasi_perpustakaan.xlsx') as writer:
+            df_buku.to_excel(writer, sheet_name='Daftar Buku', index=False)
+            df_peminjaman.to_excel(writer, sheet_name='Laporan Peminjaman', index=False)
+        st.success("Data berhasil disimpan ke dalam file Excel 'aplikasi_perpustakaan.xlsx'.")
 
-# Inisialisasi perpustakaan dalam session state
-if 'daftar_buku' not in st.session_state:
-    st.session_state.daftar_buku = []
-if 'laporan_peminjaman' not in st.session_state:
-    st.session_state.laporan_peminjaman = []
+# Inisialisasi perpustakaan dalam session state jika belum ada
+if 'perpustakaan' not in st.session_state:
+    st.session_state.perpustakaan = Perpustakaan()
 
-perpustakaan = Perpustakaan()
-st.session_state.daftar_buku = perpustakaan.daftar_buku
-st.session_state.laporan_peminjaman = perpustakaan.laporan_peminjaman
+# Mengakses objek perpustakaan dari session state
+perpustakaan = st.session_state.perpustakaan
 
 # Antarmuka pengguna dengan Streamlit
 st.title("Aplikasi Perpustakaan")
@@ -252,8 +252,8 @@ st.title("Aplikasi Perpustakaan")
 with st.sidebar:
     page = option_menu(
         "Perpustakaan digital",
-        ["Tambah Buku", "Daftar Buku", "Pinjam Buku", "Kembalikan Buku", "Edit Buku", "Hapus Buku", "Cari Buku", "Laporan Peminjaman"],
-        icons=["book", "list", "download", "upload", "upload", "trash", "search", "clipboard"],
+        ["Tambah Buku", "Daftar Buku", "Pinjam Buku", "Kembalikan Buku", "Edit Buku", "Hapus Buku", "Cari Buku", "Laporan Peminjaman", "Simpan ke Excel"],
+        icons=["book", "list", "download", "upload", "upload", "trash", "search", "clipboard", "file-excel"],
         menu_icon="cast",
         default_index=0,
     )
@@ -336,3 +336,8 @@ elif page == "Laporan Peminjaman":
     st.header("Laporan Peminjaman Buku")
     if st.button("Tampilkan Laporan Peminjaman"):
         perpustakaan.tampilkan_laporan_peminjaman()
+
+elif page == "Simpan ke Excel":
+    st.header("Simpan Data ke Excel")
+    if st.button("Simpan Data ke Excel"):
+        perpustakaan.simpan_ke_excel()
