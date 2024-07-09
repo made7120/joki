@@ -142,7 +142,7 @@ class Perpustakaan:
         if buku and buku.status == "dipinjam":
             buku.status = "tersedia"
             for laporan in self.laporan_peminjaman:
-                if laporan["ID Buku"] == id_buku dan laporan["Status"] == "dipinjam":
+                if laporan["ID Buku"] == id_buku and laporan["Status"] == "dipinjam":
                     laporan["Status"] = "dikembalikan"
                     break
             self.simpan_data()
