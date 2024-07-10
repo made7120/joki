@@ -3,10 +3,9 @@ import json
 import os
 import pandas as pd
 from openpyxl import Workbook, load_workbook
-from PyPDF2 import PdfFileReader
+from PyPDF2 import PdfReader
 from openpyxl.utils.exceptions import InvalidFileException
 import streamlit_authenticator as stauth
-from hashlib import sha256
 
 # Definisikan kelas Buku, BukuDigital, BukuFisik, dan Perpustakaan
 class Buku:
@@ -162,12 +161,12 @@ class Perpustakaan:
                 ws = wb.active
                 ws.append(["Judul", "Penulis", "Tahun Terbit", "Status"])
 
-            # Clear the existing data
+            # Hapus data yang ada
             for row in ws.iter_rows(min_row=2, max_row=ws.max_row, min_col=1, max_col=ws.max_column):
                 for cell in row:
                     cell.value = None
 
-            # Add new data
+            # Tambahkan data baru
             for buku in self.daftar_buku:
                 ws.append([buku.judul, buku.penulis, buku.tahun_terbit, buku.status])
             wb.save("daftar_buku.xlsx")
@@ -181,9 +180,9 @@ class Perpustakaan:
 # Fungsi untuk membaca dan menampilkan isi PDF
 def view_pdf(file_path):
     with open(file_path, "rb") as f:
-        pdf_reader = PdfFileReader(f)
-        for page_num in range(pdf_reader.numPages):
-            page = pdf_reader.getPage(page_num)
+        pdf_reader = PdfReader(f)
+        for page_num in range(len(pdf_reader.pages)):
+            page = pdf_reader.pages[page_num]
             st.write(page.extract_text())
 
 # Setup authenticator
@@ -216,11 +215,11 @@ def main():
 # Inisialisasi perpustakaan
 perpustakaan = Perpustakaan()
 
-# Login and Register
+# Login dan Register
 name, authentication_status, username = authenticator.login('Login', 'main')
 
 if authentication_status:
-    st.sidebar.title(f"Welcome {name}")
+    st.sidebar.title(f"Selamat Datang {name}")
     menu = [
         {"label": "Tambah Buku Digital", "icon": "💻️"},
         {"label": "Tambah Buku Fisik", "icon": "📚️"},
@@ -437,14 +436,14 @@ if authentication_status:
 
     library_app()
 else:
-    st.warning('Please login to access the library system.')
+    st.warning('Harap login untuk mengakses sistem perpustakaan.')
     st.stop()
 
 if authentication_status == False:
-    st.error('Username/password is incorrect')
+    st.error('Username/password salah')
 
 if authentication_status == None:
-    st.warning('Please enter your username and password')
+    st.warning('Harap masukkan username dan password')
 
 if st.button('Logout'):
     authenticator.logout('main', 'sidebar')
