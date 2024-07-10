@@ -1,398 +1,453 @@
 import streamlit as st
-from abc import ABC, abstractmethod
+import json
+import os
 import pandas as pd
-from streamlit_option_menu import option_menu
-import sqlite3
+from openpyxl import Workbook, load_workbook
+from PyPDF2 import PdfFileReader
+from openpyxl.utils.exceptions import InvalidFileException
+import streamlit_authenticator as stauth
+from hashlib import sha256
 
-# Koneksi ke database SQLite
-def create_connection():
-    return sqlite3.connect('perpustakaan.db')
-
-# Inisialisasi tabel jika belum ada
-def initialize_db():
-    conn = create_connection()
-    cursor = conn.cursor()
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS buku (
-            id_buku INTEGER PRIMARY KEY,
-            judul TEXT,
-            penulis TEXT,
-            tahun_terbit INTEGER,
-            status TEXT,
-            ukuran_file REAL,
-            format_file TEXT,
-            jumlah_halaman INTEGER,
-            berat REAL
-        )
-    ''')
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS peminjaman (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            id_buku INTEGER,
-            judul TEXT,
-            nama_peminjam TEXT,
-            status TEXT
-        )
-    ''')
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS users (
-            username TEXT PRIMARY KEY,
-            password TEXT
-        )
-    ''')
-    conn.commit()
-    conn.close()
-
-initialize_db()
-
-# Fungsi untuk memeriksa login
-def check_login(username, password):
-    conn = create_connection()
-    cursor = conn.cursor()
-    cursor.execute("SELECT * FROM users WHERE username=? AND password=?", (username, password))
-    result = cursor.fetchone()
-    conn.close()
-    return result
-
-# Fungsi untuk menambahkan pengguna baru
-def add_user(username, password):
-    conn = create_connection()
-    cursor = conn.cursor()
-    cursor.execute("INSERT INTO users (username, password) VALUES (?, ?)", (username, password))
-    conn.commit()
-    conn.close()
-
-# Halaman login
-def login_page():
-    st.header("Login")
-    username = st.text_input("Username")
-    password = st.text_input("Password", type='password')
-    if st.button("Login"):
-        if check_login(username, password):
-            st.session_state['logged_in'] = True
-            st.session_state['username'] = username
-            st.success("Login berhasil")
-        else:
-            st.error("Username atau password salah")
-
-# Halaman registrasi
-def register_page():
-    st.header("Register")
-    username = st.text_input("Username")
-    password = st.text_input("Password", type='password')
-    if st.button("Register"):
-        if username and password:
-            add_user(username, password)
-            st.success("Registrasi berhasil, silakan login")
-        else:
-            st.error("Harap isi semua kolom")
-
-# Halaman logout
-def logout_page():
-    st.session_state['logged_in'] = False
-    st.session_state['username'] = ""
-    st.success("Logout berhasil")
-
-# Styling
-st.markdown(
-    """
-    <style>
-    .stApp {
-        background-image: url("https://i.ibb.co.com/x1n9VX6/logo-png.png");
-        background-size: cover;
-    }
-    .st-emotion-cache-6qob1r {  /* CSS class untuk sidebar */
-        background-color: #ADD8E6;
-    }
-    .st-emotion-cache-165ax5l {
-        background-color: rgba(255, 255, 255, 1) !important;
-    }
-
-    </style>
-    """,
-    unsafe_allow_html=True
-)
-
-# Kelas Abstrak untuk Buku
-class BukuBase(ABC):
-    def __init__(self, id_buku, judul, penulis, tahun_terbit):
-        self.id_buku = id_buku
+# Definisikan kelas Buku, BukuDigital, BukuFisik, dan Perpustakaan
+class Buku:
+    def __init__(self, judul, penulis, tahun_terbit, status="tersedia"):
         self.judul = judul
         self.penulis = penulis
         self.tahun_terbit = tahun_terbit
-        self.status = "tersedia"
-
-    @abstractmethod
-    def info_buku(self):
-        pass
-
-# Kelas Buku Digital
-class BukuDigital(BukuBase):
-    def __init__(self, id_buku, judul, penulis, tahun_terbit, ukuran_file, format_file):
-        super().__init__(id_buku, judul, penulis, tahun_terbit)
-        self.ukuran_file = ukuran_file
-        self.format_file = format_file
+        self.status = status
 
     def info_buku(self):
         return {
-            "ID": self.id_buku,
             "Judul": self.judul,
             "Penulis": self.penulis,
-            "Tahun Terbit": self.tahun_terbit,
-            "Status": self.status,
-            "Ukuran File": self.ukuran_file,
-            "Format": self.format_file,
-            "Jumlah Halaman": None,
-            "Berat": None
+            "Tahun Terbit": str(self.tahun_terbit), 
+            "Status": self.status
         }
 
-# Kelas Buku Fisik
-class BukuFisik(BukuBase):
-    def __init__(self, id_buku, judul, penulis, tahun_terbit, jumlah_halaman, berat):
-        super().__init__(id_buku, judul, penulis, tahun_terbit)
+class BukuDigital(Buku):
+    def __init__(self, judul, penulis, tahun_terbit, ukuran_file, format_file, file_path, status="tersedia"):
+        super().__init__(judul, penulis, tahun_terbit, status)
+        self.ukuran_file = ukuran_file
+        self.format_file = format_file
+        self.file_path = file_path
+
+    def info_buku(self):
+        info = super().info_buku()
+        info.update({"Ukuran File (MB)": self.ukuran_file, "Format File": self.format_file, "File Path": self.file_path})
+        return info
+
+class BukuFisik(Buku):
+    def __init__(self, judul, penulis, tahun_terbit, jumlah_halaman, berat, status="tersedia"):
+        super().__init__(judul, penulis, tahun_terbit, status)
         self.jumlah_halaman = jumlah_halaman
         self.berat = berat
 
     def info_buku(self):
-        return {
-            "ID": self.id_buku,
-            "Judul": self.judul,
-            "Penulis": self.penulis,
-            "Tahun Terbit": self.tahun_terbit,
-            "Status": self.status,
-            "Ukuran File": None,
-            "Format": None,
-            "Jumlah Halaman": self.jumlah_halaman,
-            "Berat": self.berat
-        }
+        info = super().info_buku()
+        info.update({"Jumlah Halaman": self.jumlah_halaman, "Berat (gram)": self.berat})
+        return info
 
-# Kelas untuk Perpustakaan
 class Perpustakaan:
-    def __init__(self):
-        self.daftar_buku = []
-        self.laporan_peminjaman = []
-        self.muat_data()
+    def __init__(self, data_file="data_buku.json"):
+        self.data_file = data_file
+        self.daftar_buku = self.load_data()
 
-    def simpan_data(self, query, data):
-        conn = create_connection()
-        cursor = conn.cursor()
-        cursor.execute(query, data)
-        conn.commit()
-        cursor.close()
-        conn.close()
+    def tampilkan_semua_buku(self):
+        return [buku.info_buku() for buku in self.daftar_buku]
 
-    def muat_data(self):
-        conn = create_connection()
-        cursor = conn.cursor()
-        cursor.execute("SELECT * FROM buku")
-        self.daftar_buku = cursor.fetchall()
-        cursor.execute("SELECT * FROM peminjaman")
-        self.laporan_peminjaman = cursor.fetchall()
-        cursor.close()
-        conn.close()
-
-    def tambah_buku(self, buku):
-        if isinstance(buku, BukuDigital):
-            query = "INSERT INTO buku (id_buku, judul, penulis, tahun_terbit, status, ukuran_file, format_file) VALUES (?, ?, ?, ?, ?, ?, ?)"
-            data = (buku.id_buku, buku.judul, buku.penulis, buku.tahun_terbit, buku.status, buku.ukuran_file, buku.format_file)
-        elif isinstance(buku, BukuFisik):
-            query = "INSERT INTO buku (id_buku, judul, penulis, tahun_terbit, status, jumlah_halaman, berat) VALUES (?, ?, ?, ?, ?, ?, ?)"
-            data = (buku.id_buku, buku.judul, buku.penulis, buku.tahun_terbit, buku.status, buku.jumlah_halaman, buku.berat)
-        self.simpan_data(query, data)
-        self.muat_data()
-        st.success(f"Buku '{buku.judul}' berhasil ditambahkan dengan ID {buku.id_buku}.")
-        self.tampilkan_semua_buku()
-
-    def cari_buku(self, id_buku):
+    def cari_buku(self, judul):
         for buku in self.daftar_buku:
-            if buku[0] == id_buku:  # Indeks 0 adalah id_buku
+            if buku.judul.lower() == judul.lower():
                 return buku
         return None
 
-    def tampilkan_semua_buku(self):
-        df = pd.DataFrame(self.daftar_buku, columns=["ID", "Judul", "Penulis", "Tahun Terbit", "Status", "Ukuran File", "Format File", "Jumlah Halaman", "Berat"])
-        st.table(df)
-
-    def hitung_buku_tersedia(self):
-        return sum(1 for buku in self.daftar_buku if buku[4] == "tersedia")  # Indeks 4 adalah status
-
-    def pinjam_buku(self, id_buku, nama_peminjam):
-        buku = self.cari_buku(id_buku)
-        if buku and buku[4] == "tersedia":  # Indeks 4 adalah status
-            query = "INSERT INTO peminjaman (id_buku, judul, nama_peminjam, status) VALUES (?, ?, ?, ?)"
-            data = (buku[0], buku[1], nama_peminjam, "dipinjam")  # Indeks 0 adalah id_buku, 1 adalah judul
-            self.simpan_data(query, data)
-            query = "UPDATE buku SET status = ? WHERE id_buku = ?"
-            data = ("dipinjam", id_buku)
-            self.simpan_data(query, data)
-            self.muat_data()
-            st.success(f"Buku '{buku[1]}' berhasil dipinjam oleh {nama_peminjam}.")  # Indeks 1 adalah judul
+    def hapus_buku(self, judul):
+        buku_dihapus = self.cari_buku(judul)
+        if buku_dihapus:
+            self.daftar_buku.remove(buku_dihapus)
+            self.save_data()
+            self.save_to_excel()
+            st.success(f"Buku '{judul}' berhasil dihapus.")
         else:
-            st.error(f"Buku dengan ID {id_buku} tidak tersedia untuk dipinjam.")
+            st.warning(f"Buku '{judul}' tidak ditemukan.")
 
-    def kembalikan_buku(self, id_buku):
-        buku = self.cari_buku(id_buku)
-        if buku and buku[4] == "dipinjam":  # Indeks 4 adalah status
-            query = "UPDATE buku SET status = ? WHERE id_buku = ?"
-            data = ("tersedia", id_buku)
-            self.simpan_data(query, data)
-            query = "UPDATE peminjaman SET status = ? WHERE id_buku = ? AND status = ?"
-            data = ("dikembalikan", id_buku, "dipinjam")
-            self.simpan_data(query, data)
-            self.muat_data()
-            st.success(f"Buku '{buku[1]}' berhasil dikembalikan.")  # Indeks 1 adalah judul
+    def pinjam_buku(self, judul):
+        buku_dipinjam = self.cari_buku(judul)
+        if buku_dipinjam:
+            if buku_dipinjam.status == "tersedia":
+                buku_dipinjam.status = "dipinjam"
+                self.save_data()
+                st.success(f"Buku '{judul}' berhasil dipinjam.")
+            else:
+                st.warning(f"Buku '{judul}' sedang tidak tersedia untuk dipinjam.")
         else:
-            st.error(f"Buku dengan ID {id_buku} tidak sedang dipinjam.")
+            st.warning(f"Buku '{judul}' tidak ditemukan.")
 
-    def hapus_buku(self, id_buku):
-        buku = self.cari_buku(id_buku)
-        if buku:
-            query = "DELETE FROM buku WHERE id_buku = ?"
-            data = (id_buku,)
-            self.simpan_data(query, data)
-            self.muat_data()
-            st.success(f"Buku dengan ID {id_buku} berhasil dihapus.")
-            self.tampilkan_semua_buku()
+    def kembalikan_buku(self, judul):
+        buku_dikembalikan = self.cari_buku(judul)
+        if buku_dikembalikan:
+            if buku_dikembalikan.status == "dipinjam":
+                buku_dikembalikan.status = "tersedia"
+                self.save_data()
+                st.success(f"Buku '{judul}' berhasil dikembalikan.")
+            else:
+                st.warning(f"Buku '{judul}' tidak sedang dipinjam.")
         else:
-            st.error(f"Buku dengan ID {id_buku} tidak ditemukan.")
+            st.warning(f"Buku '{judul}' tidak ditemukan.")
 
-    def edit_buku(self, id_buku, **kwargs):
-        buku = self.cari_buku(id_buku)
-        if buku:
-            for key, value in kwargs.items():
-                query = f"UPDATE buku SET {key} = ? WHERE id_buku = ?"
-                data = (value, id_buku)
-                self.simpan_data(query, data)
-            self.muat_data()
-            st.success(f"Buku dengan ID {id_buku} berhasil diperbarui.")
-            self.tampilkan_semua_buku()
+    def tampilkan_buku_dipinjam(self):
+        return [buku.info_buku() for buku in self.daftar_buku if buku.status == "dipinjam"]
+
+    def tampilkan_buku_dikembalikan(self):
+        return [buku.info_buku() for buku in self.daftar_buku if buku.status == "tersedia"]
+
+    def tambah_buku(self, buku):
+        self.daftar_buku.append(buku)
+        self.save_data()
+        st.success(f"Buku '{buku.judul}' berhasil ditambahkan.")  
+        self.save_to_excel()
+
+    def load_data(self):
+        if os.path.exists(self.data_file):
+            try:
+                with open(self.data_file, "r") as file:
+                    data = json.load(file)
+                    daftar_buku = []
+                    for item in data:
+                        if "Ukuran File (MB)" in item:
+                            buku = BukuDigital(
+                                judul=item["Judul"],
+                                penulis=item["Penulis"],
+                                tahun_terbit=item["Tahun Terbit"],
+                                ukuran_file=item["Ukuran File (MB)"],
+                                format_file=item["Format File"],
+                                file_path=item.get("File Path", ""),
+                                status=item["Status"]
+                            )
+                        elif "Jumlah Halaman" in item:
+                            buku = BukuFisik(
+                                judul=item["Judul"],
+                                penulis=item["Penulis"],
+                                tahun_terbit=item["Tahun Terbit"],
+                                jumlah_halaman=item["Jumlah Halaman"],
+                                berat=item["Berat (gram)"],
+                                status=item["Status"]
+                            )
+                        else:
+                            buku = Buku(
+                                judul=item["Judul"],
+                                penulis=item["Penulis"],
+                                tahun_terbit=item["Tahun Terbit"],
+                                status=item["Status"]
+                            )
+                        daftar_buku.append(buku)
+                    return daftar_buku
+            except json.JSONDecodeError:
+                st.warning("File JSON kosong atau tidak valid. Menginisialisasi dengan daftar kosong.")
+                return []
+        return []
+
+    def save_data(self):
+        data = [buku.info_buku() for buku in self.daftar_buku]
+        with open(self.data_file, "w") as file:
+            json.dump(data, file)
+
+    def save_to_excel(self):
+        try:
+            if os.path.exists("daftar_buku.xlsx"):
+                wb = load_workbook("daftar_buku.xlsx")
+                ws = wb.active
+            else:
+                wb = Workbook()
+                ws = wb.active
+                ws.append(["Judul", "Penulis", "Tahun Terbit", "Status"])
+
+            # Clear the existing data
+            for row in ws.iter_rows(min_row=2, max_row=ws.max_row, min_col=1, max_col=ws.max_column):
+                for cell in row:
+                    cell.value = None
+
+            # Add new data
+            for buku in self.daftar_buku:
+                ws.append([buku.judul, buku.penulis, buku.tahun_terbit, buku.status])
+            wb.save("daftar_buku.xlsx")
+        except PermissionError:
+            st.error("Gagal menyimpan ke 'daftar_buku.xlsx'. Pastikan file tidak sedang terbuka di program lain.")
+        except InvalidFileException:
+            st.error("Format file tidak valid atau rusak.")
+        except Exception as e:
+            st.error(f"Gagal menyimpan ke 'daftar_buku.xlsx'. Kesalahan: {e}")
+
+# Fungsi untuk membaca dan menampilkan isi PDF
+def view_pdf(file_path):
+    with open(file_path, "rb") as f:
+        pdf_reader = PdfFileReader(f)
+        for page_num in range(pdf_reader.numPages):
+            page = pdf_reader.getPage(page_num)
+            st.write(page.extract_text())
+
+# Setup authenticator
+hashed_passwords = stauth.Hasher(['123', '456']).generate()
+names = ['user1', 'user2']
+usernames = ['username1', 'username2']
+
+authenticator = stauth.Authenticate(
+    {'usernames': usernames},
+    {'passwords': hashed_passwords},
+    names,
+    'cookie_name',
+    'signature_key',
+    cookie_expiry_days=30
+)
+
+# Fungsi untuk menampilkan antarmuka Streamlit
+def main():
+    st.title("Baca Buku Digital")
+
+    # Contoh path file PDF dari buku digital
+    file_path = "path_to_your_pdf_file.pdf"  # Ganti dengan path file PDF Anda
+
+    if st.button("Baca Buku"):
+        if os.path.exists(file_path):
+            view_pdf(file_path)
         else:
-            st.error(f"Buku dengan ID {id_buku} tidak ditemukan.")
+            st.error(f"File PDF '{file_path}' tidak ditemukan.")
 
-    def tampilkan_laporan_peminjaman(self):
-        df = pd.DataFrame(self.laporan_peminjaman, columns=["ID", "ID Buku", "Judul", "Nama Peminjam", "Status"])
-        st.table(df)
-
-    def simpan_ke_excel(self):
-        df = pd.DataFrame(self.daftar_buku, columns=["ID", "Judul", "Penulis", "Tahun Terbit", "Status", "Ukuran File", "Format File", "Jumlah Halaman", "Berat"])
-        df.to_excel('aplikasi_perpustakaan.xlsx', index=False)
-
-# Inisialisasi perpustakaan dalam session state
-if 'logged_in' not in st.session_state:
-    st.session_state.logged_in = False
-
+# Inisialisasi perpustakaan
 perpustakaan = Perpustakaan()
 
-st.session_state.daftar_buku = perpustakaan.daftar_buku
-st.session_state.laporan_peminjaman = perpustakaan.laporan_peminjaman
+# Login and Register
+name, authentication_status, username = authenticator.login('Login', 'main')
 
-# Antarmuka pengguna dengan Streamlit
-st.title("Aplikasi Perpustakaan")
+if authentication_status:
+    st.sidebar.title(f"Welcome {name}")
+    menu = [
+        {"label": "Tambah Buku Digital", "icon": "💻️"},
+        {"label": "Tambah Buku Fisik", "icon": "📚️"},
+        {"label": "Tampilkan Semua Buku", "icon": "📖️"},
+        {"label": "Edit Buku", "icon": "✏️"},
+        {"label": "Hapus Buku", "icon": "❌"},
+        {"label": "Pinjam Buku", "icon": "📝️"},
+        {"label": "Kembalikan Buku", "icon": "📚️‍♂️"},
+        {"label": "Tampilkan Buku yang Dipinjam", "icon": "📊️"},
+        {"label": "Tampilkan Buku yang Dikembalikan", "icon": "📈️"}
+    ]
 
-# Sidebar untuk navigasi
-if st.session_state.logged_in:
-    with st.sidebar:
-        page = option_menu(
-            "Perpustakaan digital",
-            ["Tambah Buku", "Daftar Buku", "Pinjam Buku", "Kembalikan Buku", "Edit Buku", "Hapus Buku", "Cari Buku", "Laporan Peminjaman", "Logout"],
-            icons=["book", "list", "download", "upload", "upload", "trash", "search", "clipboard", "box-arrow-right"],
-            menu_icon="cast",
-            default_index=0,
+    # Fungsi untuk menampilkan antarmuka Streamlit
+    def library_app():
+        st.markdown(
+            """
+            <style>
+            .stApp {
+                background-image: url("https://ae01.alicdn.com/kf/H2ff989d930434f33b80e36fdb0dd11e8c/Latar-Belakang-Rak-Buku-Latar-Belakang-Rak-Buku-Latar-Belakang-Kantor-Perpustakaan-untuk-Konferensi-Video-Buku.jpg");
+                background-size: cover;
+            }
+            /* CSS untuk memindahkan sidebar ke kiri */
+            .st-emotion-cache-6qob1r{
+                background-color: #66CDAA;
+            }
+            .css-1d391kg {
+                left: auto;
+                right: 0;
+            }
+            .css-1v0mbdj.e1fvgfdy4 {
+                color: #A52A2A;  /* Warna teks */
+                font-size: 50px;  /* Ukuran teks */
+            }
+            .css-14xtw13.e8zbici2 {
+                color: #A52A2A;  /* Warna teks */
+                font-size: 40px;  /* Ukuran teks */
+            }
+            </style>
+            """,
+            unsafe_allow_html=True
         )
+        st.sidebar.title("MENU PERPUSTAKAAN DIGITAL")
+
+        menu_labels = [f"{item['icon']} {item['label']}" for item in menu]
+        choice = st.sidebar.selectbox("Pilih Menu:", menu_labels)
+
+        st.title("Selamat Datang di Perpustakaan Digital")
+
+        if choice == "💻️ Tambah Buku Digital":
+            st.subheader("Tambah Buku Digital")
+            st.image("digital_book.jpg", width=200)
+            judul = st.text_input("Judul", label_visibility="visible")
+            penulis = st.text_input("Penulis", label_visibility="visible")
+            tahun_terbit = st.number_input("Tahun Terbit", min_value=0, max_value=2024, step=1, label_visibility="visible")
+            ukuran_file = st.number_input("Ukuran File (MB)", min_value=0.0, step=0.1, label_visibility="visible")
+            format_file = st.selectbox("Format File", ["PDF", "EPUB", "MOBI"], label_visibility="visible")
+            uploaded_file = st.file_uploader("Unggah File Buku", type=["pdf", "epub", "mobi"])
+
+            if st.button("Tambah Buku Digital"):
+                if uploaded_file is not None:
+                    if not os.path.exists("uploads"):
+                        os.makedirs("uploads")
+                    file_path = os.path.join("uploads", uploaded_file.name)
+                    with open(file_path, "wb") as f:
+                        f.write(uploaded_file.getbuffer())
+                    buku_digital = BukuDigital(judul, penulis, tahun_terbit, ukuran_file, format_file, file_path)
+                    perpustakaan.tambah_buku(buku_digital)
+                else:
+                    st.error("Harap unggah file buku terlebih dahulu.")
+
+        elif choice == "📚️ Tambah Buku Fisik":
+            st.subheader("Tambah Buku Fisik")
+            st.image("physical_book.jpg", width=200)
+            judul = st.text_input("Judul", label_visibility="visible")
+            penulis = st.text_input("Penulis", label_visibility="visible")
+            tahun_terbit = st.number_input("Tahun Terbit", min_value=0, max_value=2024, step=1, label_visibility="visible")
+            jumlah_halaman = st.number_input("Jumlah Halaman", min_value=1, step=1, label_visibility="visible")
+            berat = st.number_input("Berat (gram)", min_value=1.0, step=0.1, label_visibility="visible")
+
+            if st.button("Tambah Buku Fisik"):
+                buku_fisik = BukuFisik(judul, penulis, tahun_terbit, jumlah_halaman, berat)
+                perpustakaan.tambah_buku(buku_fisik)
+
+        elif choice == "📖️ Tampilkan Semua Buku":
+            st.subheader("Daftar Semua Buku")
+            daftar_buku = perpustakaan.tampilkan_semua_buku()
+            if daftar_buku:
+                df = pd.DataFrame(daftar_buku)
+                st.dataframe(df)
+
+                for buku in daftar_buku:
+                    if "File Path" in buku:
+                        if buku["File Path"] and os.path.exists(buku["File Path"]):
+                            if st.button(f"Baca Buku: {buku['Judul']}"):
+                                with open(buku["File Path"], "rb") as f:
+                                    st.download_button(label="Klik untuk Membaca", data=f, file_name=buku["Judul"], mime="application/octet-stream")
+                        else:
+                            st.error(f"File untuk buku '{buku['Judul']}' tidak ditemukan.")
+            else:
+                st.warning("Tidak ada buku yang tersedia.")
+
+        elif choice == "✏️ Edit Buku":
+            st.subheader("Edit Buku")
+            daftar_buku = perpustakaan.tampilkan_semua_buku()
+            if daftar_buku:
+                df = pd.DataFrame(daftar_buku)
+                st.dataframe(df)
+
+                judul_buku_edit = st.text_input("Masukkan judul buku yang akan diedit:")
+                buku_diedit = perpustakaan.cari_buku(judul_buku_edit)
+
+                if buku_diedit:
+                    new_judul = st.text_input("Judul Baru", buku_diedit.judul)
+                    new_penulis = st.text_input("Penulis Baru", buku_diedit.penulis)
+                    new_tahun_terbit = st.number_input("Tahun Terbit Baru", min_value=0, max_value=2024, step=1, value=int(buku_diedit.tahun_terbit))
+                    if isinstance(buku_diedit, BukuDigital):
+                        new_ukuran_file = st.number_input("Ukuran File (MB) Baru", min_value=0.0, step=0.1, value=float(buku_diedit.ukuran_file))
+                        new_format_file = st.selectbox("Format File Baru", ["PDF", "EPUB", "MOBI"], index=["PDF", "EPUB", "MOBI"].index(buku_diedit.format_file))
+                        uploaded_file = st.file_uploader("Unggah File Buku Baru", type=["pdf", "epub", "mobi"])
+                        if st.button("Simpan Perubahan"):
+                            buku_diedit.judul = new_judul
+                            buku_diedit.penulis = new_penulis
+                            buku_diedit.tahun_terbit = new_tahun_terbit
+                            buku_diedit.ukuran_file = new_ukuran_file
+                            buku_diedit.format_file = new_format_file
+                            if uploaded_file is not None:
+                                file_path = os.path.join("uploads", uploaded_file.name)
+                                with open(file_path, "wb") as f:
+                                    f.write(uploaded_file.getbuffer())
+                                buku_diedit.file_path = file_path
+                            perpustakaan.save_data()
+                            st.success("Buku berhasil diperbarui.")
+                    elif isinstance(buku_diedit, BukuFisik):
+                        new_jumlah_halaman = st.number_input("Jumlah Halaman Baru", min_value=1, step=1, value=int(buku_diedit.jumlah_halaman))
+                        new_berat = st.number_input("Berat (gram) Baru", min_value=1.0, step=0.1, value=float(buku_diedit.berat))
+                        if st.button("Simpan Perubahan"):
+                            buku_diedit.judul = new_judul
+                            buku_diedit.penulis = new_penulis
+                            buku_diedit.tahun_terbit = new_tahun_terbit
+                            buku_diedit.jumlah_halaman = new_jumlah_halaman
+                            buku_diedit.berat = new_berat
+                            perpustakaan.save_data()
+                            st.success("Buku berhasil diperbarui.")
+                    else:
+                        if st.button("Simpan Perubahan"):
+                            buku_diedit.judul = new_judul
+                            buku_diedit.penulis = new_penulis
+                            buku_diedit.tahun_terbit = new_tahun_terbit
+                            perpustakaan.save_data()
+                            st.success("Buku berhasil diperbarui.")
+                else:
+                    st.warning("Buku tidak ditemukan.")
+            else:
+                st.warning("Tidak ada buku yang tersedia.")
+
+        elif choice == "❌ Hapus Buku":
+            st.subheader("Hapus Buku")
+            daftar_buku = perpustakaan.tampilkan_semua_buku()
+            if daftar_buku:
+                df = pd.DataFrame(daftar_buku)
+                st.dataframe(df)
+
+                judul_buku_hapus = st.text_input("Masukkan judul buku yang akan dihapus:")
+                if st.button("Hapus Buku"):
+                    perpustakaan.hapus_buku(judul_buku_hapus)
+            else:
+                st.warning("Tidak ada buku yang tersedia.")
+
+        elif choice == "📝️ Pinjam Buku":
+            st.subheader("Pinjam Buku")
+            daftar_buku = perpustakaan.tampilkan_buku_dikembalikan()
+            if daftar_buku:
+                df = pd.DataFrame(daftar_buku)
+                st.dataframe(df)
+
+                judul_buku_pinjam = st.text_input("Masukkan judul buku yang akan dipinjam:")
+                if st.button("Pinjam Buku"):
+                    hasil = perpustakaan.pinjam_buku(judul_buku_pinjam)
+                    st.success(hasil)
+            else:
+                st.warning("Tidak ada buku yang tersedia untuk dipinjam.")
+
+        elif choice == "📚️‍♂️ Kembalikan Buku":
+            st.subheader("Kembalikan Buku")
+            daftar_buku = perpustakaan.tampilkan_buku_dipinjam()
+            if daftar_buku:
+                df = pd.DataFrame(daftar_buku)
+                st.dataframe(df)
+
+                judul_buku_kembalikan = st.text_input("Masukkan judul buku yang akan dikembalikan:")
+                if st.button("Kembalikan Buku"):
+                    hasil = perpustakaan.kembalikan_buku(judul_buku_kembalikan)
+                    st.success(hasil)
+            else:
+                st.warning("Tidak ada buku yang sedang dipinjam.")
+
+        elif choice == "📊️ Tampilkan Buku yang Dipinjam":
+            st.subheader("Daftar Buku yang Dipinjam")
+            daftar_buku = perpustakaan.tampilkan_buku_dipinjam()
+            if daftar_buku:
+                df = pd.DataFrame(daftar_buku)
+                st.dataframe(df)
+            else:
+                st.warning("Tidak ada buku yang sedang dipinjam.")
+
+        elif choice == "📈️ Tampilkan Buku yang Dikembalikan":
+            st.subheader("Daftar Buku yang Dikembalikan")
+            daftar_buku = perpustakaan.tampilkan_buku_dikembalikan()
+            if daftar_buku:
+                df = pd.DataFrame(daftar_buku)
+                st.dataframe(df)
+            else:
+                st.warning("Tidak ada buku yang tersedia untuk dipinjam atau telah dikembalikan.")
+
+    library_app()
 else:
-    with st.sidebar:
-        page = option_menu(
-            "Aplikasi Perpustakaan",
-            ["Login", "Register"],
-            icons=["box-arrow-in-right", "person-plus"],
-            menu_icon="cast",
-            default_index=0,
-        )
+    st.warning('Please login to access the library system.')
+    st.stop()
 
-if page == "Tambah Buku":
-    st.header("Tambah Buku")
-    id_buku = st.number_input("ID Buku", min_value=1, step=1)
-    judul = st.text_input("Judul Buku")
-    penulis = st.text_input("Penulis")
-    tahun_terbit = st.number_input("Tahun Terbit", min_value=1000, step=1)
-    jenis_buku = st.selectbox("Jenis Buku", ["Digital", "Fisik"])
+if authentication_status == False:
+    st.error('Username/password is incorrect')
 
-    if jenis_buku == "Digital":
-        ukuran_file = st.number_input("Ukuran File (MB)", min_value=0.0, step=0.1)
-        format_file = st.text_input("Format File")
-        if st.button("Tambah Buku Digital"):
-            if judul and penulis and tahun_terbit and ukuran_file and format_file:
-                buku = BukuDigital(id_buku, judul, penulis, tahun_terbit, ukuran_file, format_file)
-                perpustakaan.tambah_buku(buku)
-            else:
-                st.error("Harap isi semua kolom.")
+if authentication_status == None:
+    st.warning('Please enter your username and password')
 
-    elif jenis_buku == "Fisik":
-        jumlah_halaman = st.number_input("Jumlah Halaman", min_value=1, step=1)
-        berat = st.number_input("Berat (gram)", min_value=0.0, step=0.1)
-        if st.button("Tambah Buku Fisik"):
-            if judul and penulis and tahun_terbit and jumlah_halaman and berat:
-                buku = BukuFisik(id_buku, judul, penulis, tahun_terbit, jumlah_halaman, berat)
-                perpustakaan.tambah_buku(buku)
-            else:
-                st.error("Harap isi semua kolom.")
+if st.button('Logout'):
+    authenticator.logout('main', 'sidebar')
 
-elif page == "Daftar Buku":
-    st.header("Daftar Buku di Perpustakaan")
-    if st.button("Tampilkan Semua Buku"):
-        perpustakaan.tampilkan_semua_buku()
-    st.write(f"Jumlah buku tersedia: {perpustakaan.hitung_buku_tersedia()}")
-
-elif page == "Pinjam Buku":
-    st.header("Pinjam Buku")
-    id_pinjam = st.number_input("ID Buku untuk Dipinjam", min_value=1, step=1)
-    nama_peminjam = st.text_input("Nama Peminjam")
-    if st.button("Pinjam Buku"):
-        perpustakaan.pinjam_buku(id_pinjam, nama_peminjam)
-
-elif page == "Kembalikan Buku":
-    st.header("Kembalikan Buku")
-    id_kembali = st.number_input("ID Buku untuk Dikembalikan", min_value=1, step=1)
-    if st.button("Kembalikan Buku"):
-        perpustakaan.kembalikan_buku(id_kembali)
-
-elif page == "Edit Buku":
-    st.header("Edit Buku")
-    id_edit = st.number_input("ID Buku untuk Diedit", min_value=1, step=1)
-    field_to_edit = st.selectbox("Field yang akan Diedit", ["judul", "penulis", "tahun_terbit", "ukuran_file", "format_file", "jumlah_halaman", "berat"])
-    new_value = st.text_input(f"Nilai baru untuk {field_to_edit}")
-    if st.button("Edit Buku"):
-        if new_value:
-            perpustakaan.edit_buku(id_edit, **{field_to_edit: new_value})
-        else:
-            st.error("Harap isi nilai baru untuk field yang akan diedit.")
-
-elif page == "Hapus Buku":
-    st.header("Hapus Buku")
-    id_hapus = st.number_input("ID Buku untuk Dihapus", min_value=1, step=1)
-    if st.button("Hapus Buku"):
-        perpustakaan.hapus_buku(id_hapus)
-
-elif page == "Cari Buku":
-    st.header("Cari Buku")
-    id_cari = st.number_input("ID Buku untuk Dicari", min_value=1, step=1)
-    if st.button("Cari Buku"):
-        buku = perpustakaan.cari_buku(id_cari)
-        if buku:
-            st.write(buku)
-        else:
-            st.error(f"Buku dengan ID {id_cari} tidak ditemukan.")
-
-elif page == "Laporan Peminjaman":
-    st.header("Laporan Peminjaman Buku")
-    if st.button("Tampilkan Laporan Peminjaman"):
-        perpustakaan.tampilkan_laporan_peminjaman()
-
-elif page == "Login":
-    login_page()
-
-elif page == "Register":
-    register_page()
-
-elif page == "Logout":
-    logout_page()
+if __name__ == "__main__":
+    main()
