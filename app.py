@@ -6,6 +6,7 @@ from openpyxl import Workbook, load_workbook
 from PyPDF2 import PdfReader
 from openpyxl.utils.exceptions import InvalidFileException
 import streamlit_authenticator as stauth
+import bcrypt
 
 # Definisikan kelas Buku, BukuDigital, BukuFisik, dan Perpustakaan
 class Buku:
@@ -186,18 +187,20 @@ def view_pdf(file_path):
             st.write(page.extract_text())
 
 # Setup authenticator
-hashed_passwords = stauth.Hasher(['123', '456']).generate()
-names = ['user1', 'user2']
 usernames = ['username1', 'username2']
+names = ['user1', 'user2']
+passwords = ['123', '456']
 
-authenticator = stauth.Authenticate(
-    {'usernames': usernames},
-    {'passwords': hashed_passwords},
-    names,
-    'cookie_name',
-    'signature_key',
-    cookie_expiry_days=30
-)
+hashed_passwords = [bcrypt.hashpw(p.encode('utf-8'), bcrypt.gensalt()).decode('utf-8') for p in passwords]
+
+credentials = {
+    "usernames": {
+        usernames[0]: {"name": names[0], "password": hashed_passwords[0]},
+        usernames[1]: {"name": names[1], "password": hashed_passwords[1]}
+    }
+}
+
+authenticator = stauth.Authenticate(credentials, 'cookie_name', 'signature_key', cookie_expiry_days=30)
 
 # Fungsi untuk menampilkan antarmuka Streamlit
 def main():
