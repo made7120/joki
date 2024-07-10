@@ -1,4 +1,4 @@
-import streamlit as st
+kokimport streamlit as st
 import json
 import os
 import pandas as pd
@@ -99,7 +99,7 @@ class Perpustakaan:
         return [buku.info_buku() for buku in self.daftar_buku if buku.status == "dipinjam"]
 
     def tampilkan_buku_dikembalikan(self):
-        return [buku.info_buku() for buku in self.daftar_buku jika buku.status == "tersedia"]
+        return [buku.info_buku() for buku in self.daftar_buku if buku.status == "tersedia"]
 
     def tambah_buku(self, buku):
         self.daftar_buku.append(buku)
