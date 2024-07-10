@@ -5,7 +5,6 @@ import pandas as pd
 from openpyxl import Workbook, load_workbook
 from PyPDF2 import PdfReader
 from openpyxl.utils.exceptions import InvalidFileException
-import streamlit_authenticator as stauth
 import bcrypt
 
 # Definisikan kelas Buku, BukuDigital, BukuFisik, dan Perpustakaan
@@ -186,270 +185,257 @@ def view_pdf(file_path):
             page = pdf_reader.pages[page_num]
             st.write(page.extract_text())
 
-# Setup authenticator
-usernames = ['username1', 'username2']
-names = ['user1', 'user2']
-passwords = ['123', '456']
-
-hashed_passwords = [bcrypt.hashpw(p.encode('utf-8'), bcrypt.gensalt()).decode('utf-8') for p in passwords]
-
-credentials = {
-    "usernames": {
-        usernames[0]: {"name": names[0], "password": hashed_passwords[0]},
-        usernames[1]: {"name": names[1], "password": hashed_passwords[1]}
-    }
+# Setup autentikasi
+users = {
+    "username1": bcrypt.hashpw("password1".encode('utf-8'), bcrypt.gensalt()),
+    "username2": bcrypt.hashpw("password2".encode('utf-8'), bcrypt.gensalt())
 }
 
-authenticator = stauth.Authenticate(credentials, 'cookie_name', 'signature_key', cookie_expiry_days=30)
+# Fungsi login
+def login(username, password):
+    if username in users and bcrypt.checkpw(password.encode('utf-8'), users[username]):
+        return True
+    return False
 
 # Fungsi untuk menampilkan antarmuka Streamlit
 def main():
-    st.title("Baca Buku Digital")
+    if 'logged_in' not in st.session_state:
+        st.session_state['logged_in'] = False
+    if 'username' not in st.session_state:
+        st.session_state['username'] = ""
 
-    # Contoh path file PDF dari buku digital
-    file_path = "path_to_your_pdf_file.pdf"  # Ganti dengan path file PDF Anda
-
-    if st.button("Baca Buku"):
-        if os.path.exists(file_path):
-            view_pdf(file_path)
-        else:
-            st.error(f"File PDF '{file_path}' tidak ditemukan.")
-
-# Inisialisasi perpustakaan
-perpustakaan = Perpustakaan()
-
-# Login dan Register
-name, authentication_status, username = authenticator.login('Login', 'main')
-
-if authentication_status:
-    st.sidebar.title(f"Selamat Datang {name}")
-    menu = [
-        {"label": "Tambah Buku Digital", "icon": "💻️"},
-        {"label": "Tambah Buku Fisik", "icon": "📚️"},
-        {"label": "Tampilkan Semua Buku", "icon": "📖️"},
-        {"label": "Edit Buku", "icon": "✏️"},
-        {"label": "Hapus Buku", "icon": "❌"},
-        {"label": "Pinjam Buku", "icon": "📝️"},
-        {"label": "Kembalikan Buku", "icon": "📚️‍♂️"},
-        {"label": "Tampilkan Buku yang Dipinjam", "icon": "📊️"},
-        {"label": "Tampilkan Buku yang Dikembalikan", "icon": "📈️"}
-    ]
-
-    # Fungsi untuk menampilkan antarmuka Streamlit
-    def library_app():
-        st.markdown(
-            """
-            <style>
-            .stApp {
-                background-image: url("https://ae01.alicdn.com/kf/H2ff989d930434f33b80e36fdb0dd11e8c/Latar-Belakang-Rak-Buku-Latar-Belakang-Rak-Buku-Latar-Belakang-Kantor-Perpustakaan-untuk-Konferensi-Video-Buku.jpg");
-                background-size: cover;
-            }
-            /* CSS untuk memindahkan sidebar ke kiri */
-            .st-emotion-cache-6qob1r{
-                background-color: #66CDAA;
-            }
-            .css-1d391kg {
-                left: auto;
-                right: 0;
-            }
-            .css-1v0mbdj.e1fvgfdy4 {
-                color: #A52A2A;  /* Warna teks */
-                font-size: 50px;  /* Ukuran teks */
-            }
-            .css-14xtw13.e8zbici2 {
-                color: #A52A2A;  /* Warna teks */
-                font-size: 40px;  /* Ukuran teks */
-            }
-            </style>
-            """,
-            unsafe_allow_html=True
-        )
-        st.sidebar.title("MENU PERPUSTAKAAN DIGITAL")
-
-        menu_labels = [f"{item['icon']} {item['label']}" for item in menu]
-        choice = st.sidebar.selectbox("Pilih Menu:", menu_labels)
-
-        st.title("Selamat Datang di Perpustakaan Digital")
-
-        if choice == "💻️ Tambah Buku Digital":
-            st.subheader("Tambah Buku Digital")
-            st.image("digital_book.jpg", width=200)
-            judul = st.text_input("Judul", label_visibility="visible")
-            penulis = st.text_input("Penulis", label_visibility="visible")
-            tahun_terbit = st.number_input("Tahun Terbit", min_value=0, max_value=2024, step=1, label_visibility="visible")
-            ukuran_file = st.number_input("Ukuran File (MB)", min_value=0.0, step=0.1, label_visibility="visible")
-            format_file = st.selectbox("Format File", ["PDF", "EPUB", "MOBI"], label_visibility="visible")
-            uploaded_file = st.file_uploader("Unggah File Buku", type=["pdf", "epub", "mobi"])
-
-            if st.button("Tambah Buku Digital"):
-                if uploaded_file is not None:
-                    if not os.path.exists("uploads"):
-                        os.makedirs("uploads")
-                    file_path = os.path.join("uploads", uploaded_file.name)
-                    with open(file_path, "wb") as f:
-                        f.write(uploaded_file.getbuffer())
-                    buku_digital = BukuDigital(judul, penulis, tahun_terbit, ukuran_file, format_file, file_path)
-                    perpustakaan.tambah_buku(buku_digital)
-                else:
-                    st.error("Harap unggah file buku terlebih dahulu.")
-
-        elif choice == "📚️ Tambah Buku Fisik":
-            st.subheader("Tambah Buku Fisik")
-            st.image("physical_book.jpg", width=200)
-            judul = st.text_input("Judul", label_visibility="visible")
-            penulis = st.text_input("Penulis", label_visibility="visible")
-            tahun_terbit = st.number_input("Tahun Terbit", min_value=0, max_value=2024, step=1, label_visibility="visible")
-            jumlah_halaman = st.number_input("Jumlah Halaman", min_value=1, step=1, label_visibility="visible")
-            berat = st.number_input("Berat (gram)", min_value=1.0, step=0.1, label_visibility="visible")
-
-            if st.button("Tambah Buku Fisik"):
-                buku_fisik = BukuFisik(judul, penulis, tahun_terbit, jumlah_halaman, berat)
-                perpustakaan.tambah_buku(buku_fisik)
-
-        elif choice == "📖️ Tampilkan Semua Buku":
-            st.subheader("Daftar Semua Buku")
-            daftar_buku = perpustakaan.tampilkan_semua_buku()
-            if daftar_buku:
-                df = pd.DataFrame(daftar_buku)
-                st.dataframe(df)
-
-                for buku in daftar_buku:
-                    if "File Path" in buku:
-                        if buku["File Path"] and os.path.exists(buku["File Path"]):
-                            if st.button(f"Baca Buku: {buku['Judul']}"):
-                                with open(buku["File Path"], "rb") as f:
-                                    st.download_button(label="Klik untuk Membaca", data=f, file_name=buku["Judul"], mime="application/octet-stream")
-                        else:
-                            st.error(f"File untuk buku '{buku['Judul']}' tidak ditemukan.")
+    if not st.session_state['logged_in']:
+        st.title("Login")
+        username = st.text_input("Username")
+        password = st.text_input("Password", type="password")
+        if st.button("Login"):
+            if login(username, password):
+                st.session_state['logged_in'] = True
+                st.session_state['username'] = username
+                st.success("Login berhasil!")
             else:
-                st.warning("Tidak ada buku yang tersedia.")
+                st.error("Username atau password salah.")
+    else:
+        st.sidebar.title(f"Selamat Datang {st.session_state['username']}")
+        menu = [
+            {"label": "Tambah Buku Digital", "icon": "💻️"},
+            {"label": "Tambah Buku Fisik", "icon": "📚️"},
+            {"label": "Tampilkan Semua Buku", "icon": "📖️"},
+            {"label": "Edit Buku", "icon": "✏️"},
+            {"label": "Hapus Buku", "icon": "❌"},
+            {"label": "Pinjam Buku", "icon": "📝️"},
+            {"label": "Kembalikan Buku", "icon": "📚️‍♂️"},
+            {"label": "Tampilkan Buku yang Dipinjam", "icon": "📊️"},
+            {"label": "Tampilkan Buku yang Dikembalikan", "icon": "📈️"}
+        ]
 
-        elif choice == "✏️ Edit Buku":
-            st.subheader("Edit Buku")
-            daftar_buku = perpustakaan.tampilkan_semua_buku()
-            if daftar_buku:
-                df = pd.DataFrame(daftar_buku)
-                st.dataframe(df)
+        # Fungsi untuk menampilkan antarmuka Streamlit
+        def library_app():
+            st.markdown(
+                """
+                <style>
+                .stApp {
+                    background-image: url("https://ae01.alicdn.com/kf/H2ff989d930434f33b80e36fdb0dd11e8c/Latar-Belakang-Rak-Buku-Latar-Belakang-Rak-Buku-Latar-Belakang-Kantor-Perpustakaan-untuk-Konferensi-Video-Buku.jpg");
+                    background-size: cover;
+                }
+                .st-emotion-cache-6qob1r{
+                    background-color: #66CDAA;
+                }
+                .css-1d391kg {
+                    left: auto;
+                    right: 0;
+                }
+                .css-1v0mbdj.e1fvgfdy4 {
+                    color: #A52A2A;
+                    font-size: 50px;
+                }
+                .css-14xtw13.e8zbici2 {
+                    color: #A52A2A;
+                    font-size: 40px;
+                }
+                </style>
+                """,
+                unsafe_allow_html=True
+            )
+            st.sidebar.title("MENU PERPUSTAKAAN DIGITAL")
 
-                judul_buku_edit = st.text_input("Masukkan judul buku yang akan diedit:")
-                buku_diedit = perpustakaan.cari_buku(judul_buku_edit)
+            menu_labels = [f"{item['icon']} {item['label']}" for item in menu]
+            choice = st.sidebar.selectbox("Pilih Menu:", menu_labels)
 
-                if buku_diedit:
-                    new_judul = st.text_input("Judul Baru", buku_diedit.judul)
-                    new_penulis = st.text_input("Penulis Baru", buku_diedit.penulis)
-                    new_tahun_terbit = st.number_input("Tahun Terbit Baru", min_value=0, max_value=2024, step=1, value=int(buku_diedit.tahun_terbit))
-                    if isinstance(buku_diedit, BukuDigital):
-                        new_ukuran_file = st.number_input("Ukuran File (MB) Baru", min_value=0.0, step=0.1, value=float(buku_diedit.ukuran_file))
-                        new_format_file = st.selectbox("Format File Baru", ["PDF", "EPUB", "MOBI"], index=["PDF", "EPUB", "MOBI"].index(buku_diedit.format_file))
-                        uploaded_file = st.file_uploader("Unggah File Buku Baru", type=["pdf", "epub", "mobi"])
-                        if st.button("Simpan Perubahan"):
-                            buku_diedit.judul = new_judul
-                            buku_diedit.penulis = new_penulis
-                            buku_diedit.tahun_terbit = new_tahun_terbit
-                            buku_diedit.ukuran_file = new_ukuran_file
-                            buku_diedit.format_file = new_format_file
-                            if uploaded_file is not None:
-                                file_path = os.path.join("uploads", uploaded_file.name)
-                                with open(file_path, "wb") as f:
-                                    f.write(uploaded_file.getbuffer())
-                                buku_diedit.file_path = file_path
-                            perpustakaan.save_data()
-                            st.success("Buku berhasil diperbarui.")
-                    elif isinstance(buku_diedit, BukuFisik):
-                        new_jumlah_halaman = st.number_input("Jumlah Halaman Baru", min_value=1, step=1, value=int(buku_diedit.jumlah_halaman))
-                        new_berat = st.number_input("Berat (gram) Baru", min_value=1.0, step=0.1, value=float(buku_diedit.berat))
-                        if st.button("Simpan Perubahan"):
-                            buku_diedit.judul = new_judul
-                            buku_diedit.penulis = new_penulis
-                            buku_diedit.tahun_terbit = new_tahun_terbit
-                            buku_diedit.jumlah_halaman = new_jumlah_halaman
-                            buku_diedit.berat = new_berat
-                            perpustakaan.save_data()
-                            st.success("Buku berhasil diperbarui.")
+            st.title("Selamat Datang di Perpustakaan Digital")
+
+            if choice == "💻️ Tambah Buku Digital":
+                st.subheader("Tambah Buku Digital")
+                st.image("digital_book.jpg", width=200)
+                judul = st.text_input("Judul", label_visibility="visible")
+                penulis = st.text_input("Penulis", label_visibility="visible")
+                tahun_terbit = st.number_input("Tahun Terbit", min_value=0, max_value=2024, step=1, label_visibility="visible")
+                ukuran_file = st.number_input("Ukuran File (MB)", min_value=0.0, step=0.1, label_visibility="visible")
+                format_file = st.selectbox("Format File", ["PDF", "EPUB", "MOBI"], label_visibility="visible")
+                uploaded_file = st.file_uploader("Unggah File Buku", type=["pdf", "epub", "mobi"])
+
+                if st.button("Tambah Buku Digital"):
+                    if uploaded_file is not None:
+                        if not os.path.exists("uploads"):
+                            os.makedirs("uploads")
+                        file_path = os.path.join("uploads", uploaded_file.name)
+                        with open(file_path, "wb") as f:
+                            f.write(uploaded_file.getbuffer())
+                        buku_digital = BukuDigital(judul, penulis, tahun_terbit, ukuran_file, format_file, file_path)
+                        perpustakaan.tambah_buku(buku_digital)
                     else:
-                        if st.button("Simpan Perubahan"):
-                            buku_diedit.judul = new_judul
-                            buku_diedit.penulis = new_penulis
-                            buku_diedit.tahun_terbit = new_tahun_terbit
-                            perpustakaan.save_data()
-                            st.success("Buku berhasil diperbarui.")
+                        st.error("Harap unggah file buku terlebih dahulu.")
+
+            elif choice == "📚️ Tambah Buku Fisik":
+                st.subheader("Tambah Buku Fisik")
+                st.image("physical_book.jpg", width=200)
+                judul = st.text_input("Judul", label_visibility="visible")
+                penulis = st.text_input("Penulis", label_visibility="visible")
+                tahun_terbit = st.number_input("Tahun Terbit", min_value=0, max_value=2024, step=1, label_visibility="visible")
+                jumlah_halaman = st.number_input("Jumlah Halaman", min_value=1, step=1, label_visibility="visible")
+                berat = st.number_input("Berat (gram)", min_value=1.0, step=0.1, label_visibility="visible")
+
+                if st.button("Tambah Buku Fisik"):
+                    buku_fisik = BukuFisik(judul, penulis, tahun_terbit, jumlah_halaman, berat)
+                    perpustakaan.tambah_buku(buku_fisik)
+
+            elif choice == "📖️ Tampilkan Semua Buku":
+                st.subheader("Daftar Semua Buku")
+                daftar_buku = perpustakaan.tampilkan_semua_buku()
+                if daftar_buku:
+                    df = pd.DataFrame(daftar_buku)
+                    st.dataframe(df)
+
+                    for buku in daftar_buku:
+                        if "File Path" in buku:
+                            if buku["File Path"] and os.path.exists(buku["File Path"]):
+                                if st.button(f"Baca Buku: {buku['Judul']}"):
+                                    with open(buku["File Path"], "rb") as f:
+                                        st.download_button(label="Klik untuk Membaca", data=f, file_name=buku["Judul"], mime="application/octet-stream")
+                            else:
+                                st.error(f"File untuk buku '{buku['Judul']}' tidak ditemukan.")
                 else:
-                    st.warning("Buku tidak ditemukan.")
-            else:
-                st.warning("Tidak ada buku yang tersedia.")
+                    st.warning("Tidak ada buku yang tersedia.")
 
-        elif choice == "❌ Hapus Buku":
-            st.subheader("Hapus Buku")
-            daftar_buku = perpustakaan.tampilkan_semua_buku()
-            if daftar_buku:
-                df = pd.DataFrame(daftar_buku)
-                st.dataframe(df)
+            elif choice == "✏️ Edit Buku":
+                st.subheader("Edit Buku")
+                daftar_buku = perpustakaan.tampilkan_semua_buku()
+                if daftar_buku:
+                    df = pd.DataFrame(daftar_buku)
+                    st.dataframe(df)
 
-                judul_buku_hapus = st.text_input("Masukkan judul buku yang akan dihapus:")
-                if st.button("Hapus Buku"):
-                    perpustakaan.hapus_buku(judul_buku_hapus)
-            else:
-                st.warning("Tidak ada buku yang tersedia.")
+                    judul_buku_edit = st.text_input("Masukkan judul buku yang akan diedit:")
+                    buku_diedit = perpustakaan.cari_buku(judul_buku_edit)
 
-        elif choice == "📝️ Pinjam Buku":
-            st.subheader("Pinjam Buku")
-            daftar_buku = perpustakaan.tampilkan_buku_dikembalikan()
-            if daftar_buku:
-                df = pd.DataFrame(daftar_buku)
-                st.dataframe(df)
+                    if buku_diedit:
+                        new_judul = st.text_input("Judul Baru", buku_diedit.judul)
+                        new_penulis = st.text_input("Penulis Baru", buku_diedit.penulis)
+                        new_tahun_terbit = st.number_input("Tahun Terbit Baru", min_value=0, max_value=2024, step=1, value=int(buku_diedit.tahun_terbit))
+                        if isinstance(buku_diedit, BukuDigital):
+                            new_ukuran_file = st.number_input("Ukuran File (MB) Baru", min_value=0.0, step=0.1, value=float(buku_diedit.ukuran_file))
+                            new_format_file = st.selectbox("Format File Baru", ["PDF", "EPUB", "MOBI"], index=["PDF", "EPUB", "MOBI"].index(buku_diedit.format_file))
+                            uploaded_file = st.file_uploader("Unggah File Buku Baru", type=["pdf", "epub", "mobi"])
+                            if st.button("Simpan Perubahan"):
+                                buku_diedit.judul = new_judul
+                                buku_diedit.penulis = new_penulis
+                                buku_diedit.tahun_terbit = new_tahun_terbit
+                                buku_diedit.ukuran_file = new_ukuran_file
+                                buku_diedit.format_file = new_format_file
+                                if uploaded_file is not None:
+                                    file_path = os.path.join("uploads", uploaded_file.name)
+                                    with open(file_path, "wb") as f:
+                                        f.write(uploaded_file.getbuffer())
+                                    buku_diedit.file_path = file_path
+                                perpustakaan.save_data()
+                                st.success("Buku berhasil diperbarui.")
+                        elif isinstance(buku_diedit, BukuFisik):
+                            new_jumlah_halaman = st.number_input("Jumlah Halaman Baru", min_value=1, step=1, value=int(buku_diedit.jumlah_halaman))
+                            new_berat = st.number_input("Berat (gram) Baru", min_value=1.0, step=0.1, value=float(buku_diedit.berat))
+                            if st.button("Simpan Perubahan"):
+                                buku_diedit.judul = new_judul
+                                buku_diedit.penulis = new_penulis
+                                buku_diedit.tahun_terbit = new_tahun_terbit
+                                buku_diedit.jumlah_halaman = new_jumlah_halaman
+                                buku_diedit.berat = new_berat
+                                perpustakaan.save_data()
+                                st.success("Buku berhasil diperbarui.")
+                        else:
+                            if st.button("Simpan Perubahan"):
+                                buku_diedit.judul = new_judul
+                                buku_diedit.penulis = new_penulis
+                                buku_diedit.tahun_terbit = new_tahun_terbit
+                                perpustakaan.save_data()
+                                st.success("Buku berhasil diperbarui.")
+                    else:
+                        st.warning("Buku tidak ditemukan.")
+                else:
+                    st.warning("Tidak ada buku yang tersedia.")
 
-                judul_buku_pinjam = st.text_input("Masukkan judul buku yang akan dipinjam:")
-                if st.button("Pinjam Buku"):
-                    hasil = perpustakaan.pinjam_buku(judul_buku_pinjam)
-                    st.success(hasil)
-            else:
-                st.warning("Tidak ada buku yang tersedia untuk dipinjam.")
+            elif choice == "❌ Hapus Buku":
+                st.subheader("Hapus Buku")
+                daftar_buku = perpustakaan.tampilkan_semua_buku()
+                if daftar_buku:
+                    df = pd.DataFrame(daftar_buku)
+                    st.dataframe(df)
 
-        elif choice == "📚️‍♂️ Kembalikan Buku":
-            st.subheader("Kembalikan Buku")
-            daftar_buku = perpustakaan.tampilkan_buku_dipinjam()
-            if daftar_buku:
-                df = pd.DataFrame(daftar_buku)
-                st.dataframe(df)
+                    judul_buku_hapus = st.text_input("Masukkan judul buku yang akan dihapus:")
+                    if st.button("Hapus Buku"):
+                        perpustakaan.hapus_buku(judul_buku_hapus)
+                else:
+                    st.warning("Tidak ada buku yang tersedia.")
 
-                judul_buku_kembalikan = st.text_input("Masukkan judul buku yang akan dikembalikan:")
-                if st.button("Kembalikan Buku"):
-                    hasil = perpustakaan.kembalikan_buku(judul_buku_kembalikan)
-                    st.success(hasil)
-            else:
-                st.warning("Tidak ada buku yang sedang dipinjam.")
+            elif choice == "📝️ Pinjam Buku":
+                st.subheader("Pinjam Buku")
+                daftar_buku = perpustakaan.tampilkan_buku_dikembalikan()
+                if daftar_buku:
+                    df = pd.DataFrame(daftar_buku)
+                    st.dataframe(df)
 
-        elif choice == "📊️ Tampilkan Buku yang Dipinjam":
-            st.subheader("Daftar Buku yang Dipinjam")
-            daftar_buku = perpustakaan.tampilkan_buku_dipinjam()
-            if daftar_buku:
-                df = pd.DataFrame(daftar_buku)
-                st.dataframe(df)
-            else:
-                st.warning("Tidak ada buku yang sedang dipinjam.")
+                    judul_buku_pinjam = st.text_input("Masukkan judul buku yang akan dipinjam:")
+                    if st.button("Pinjam Buku"):
+                        hasil = perpustakaan.pinjam_buku(judul_buku_pinjam)
+                        st.success(hasil)
+                else:
+                    st.warning("Tidak ada buku yang tersedia untuk dipinjam.")
 
-        elif choice == "📈️ Tampilkan Buku yang Dikembalikan":
-            st.subheader("Daftar Buku yang Dikembalikan")
-            daftar_buku = perpustakaan.tampilkan_buku_dikembalikan()
-            if daftar_buku:
-                df = pd.DataFrame(daftar_buku)
-                st.dataframe(df)
-            else:
-                st.warning("Tidak ada buku yang tersedia untuk dipinjam atau telah dikembalikan.")
+            elif choice == "📚️‍♂️ Kembalikan Buku":
+                st.subheader("Kembalikan Buku")
+                daftar_buku = perpustakaan.tampilkan_buku_dipinjam()
+                if daftar_buku:
+                    df = pd.DataFrame(daftar_buku)
+                    st.dataframe(df)
 
-    library_app()
-else:
-    st.warning('Harap login untuk mengakses sistem perpustakaan.')
-    st.stop()
+                    judul_buku_kembalikan = st.text_input("Masukkan judul buku yang akan dikembalikan:")
+                    if st.button("Kembalikan Buku"):
+                        hasil = perpustakaan.kembalikan_buku(judul_buku_kembalikan)
+                        st.success(hasil)
+                else:
+                    st.warning("Tidak ada buku yang sedang dipinjam.")
 
-if authentication_status == False:
-    st.error('Username/password salah')
+            elif choice == "📊️ Tampilkan Buku yang Dipinjam":
+                st.subheader("Daftar Buku yang Dipinjam")
+                daftar_buku = perpustakaan.tampilkan_buku_dipinjam()
+                if daftar_buku:
+                    df = pd.DataFrame(daftar_buku)
+                    st.dataframe(df)
+                else:
+                    st.warning("Tidak ada buku yang sedang dipinjam.")
 
-if authentication_status == None:
-    st.warning('Harap masukkan username dan password')
+            elif choice == "📈️ Tampilkan Buku yang Dikembalikan":
+                st.subheader("Daftar Buku yang Dikembalikan")
+                daftar_buku = perpustakaan.tampilkan_buku_dikembalikan()
+                if daftar_buku:
+                    df = pd.DataFrame(daftar_buku)
+                    st.dataframe(df)
+                else:
+                    st.warning("Tidak ada buku yang tersedia untuk dipinjam atau telah dikembalikan.")
 
-if st.button('Logout'):
-    authenticator.logout('main', 'sidebar')
+        library_app()
+
+        if st.sidebar.button("Logout"):
+            st.session_state['logged_in'] = False
+            st.session_state['username'] = ""
+            st.sidebar.success("Logout berhasil.")
 
 if __name__ == "__main__":
     main()
