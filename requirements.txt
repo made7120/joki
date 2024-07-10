@@ -3,4 +3,5 @@ pandas
 openpyxl
 streamlit_option_menu
 PyPDF2
-streamlit streamlit-authenticator
+streamlit-authenticator
+bcrypt
